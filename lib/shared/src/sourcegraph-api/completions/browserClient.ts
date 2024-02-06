@@ -1,18 +1,13 @@
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 
-import { dependentAbortController } from '../../common/abortController'
 import { addCustomUserAgent } from '../graphql/client'
 
 import { SourcegraphCompletionsClient } from './client'
 import type { CompletionCallbacks, CompletionParameters, Event } from './types'
 
 export class SourcegraphBrowserCompletionsClient extends SourcegraphCompletionsClient {
-    protected _streamWithCallbacks(
-        params: CompletionParameters,
-        cb: CompletionCallbacks,
-        signal?: AbortSignal
-    ): void {
-        const abort = dependentAbortController(signal)
+    public stream(params: CompletionParameters, cb: CompletionCallbacks): () => void {
+        const abort = new AbortController()
         const headersInstance = new Headers(this.config.customHeaders as HeadersInit)
         addCustomUserAgent(headersInstance)
         headersInstance.set('Content-Type', 'application/json; charset=utf-8')
@@ -24,9 +19,6 @@ export class SourcegraphBrowserCompletionsClient extends SourcegraphCompletionsC
         if (trace) {
             headersInstance.set('X-Sourcegraph-Should-Trace', 'true')
         }
-        // Disable gzip compression since the sg instance will start to batch
-        // responses afterwards.
-        headersInstance.set('Accept-Encoding', 'gzip;q=0')
         fetchEventSource(this.completionsEndpoint, {
             method: 'POST',
             headers: Object.fromEntries(headersInstance.entries()),
@@ -42,12 +34,12 @@ export class SourcegraphBrowserCompletionsClient extends SourcegraphCompletionsC
                         // We show the generic error message in this case
                         console.error(error)
                     }
-                    const error = new Error(
+                    cb.onError(
                         errorMessage === null || errorMessage.length === 0
                             ? `Request failed with status code ${response.status}`
-                            : errorMessage
+                            : errorMessage,
+                        response.status
                     )
-                    cb.onError(error, response.status)
                     abort.abort()
                     return
                 }
@@ -76,12 +68,15 @@ export class SourcegraphBrowserCompletionsClient extends SourcegraphCompletionsC
             abort.abort()
             console.error(error)
         })
+        return () => {
+            abort.abort()
+        }
     }
 }
 
 declare const WorkerGlobalScope: never
-const isRunningInWebWorker =
-    typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope
+// eslint-disable-next-line unicorn/no-typeof-undefined
+const isRunningInWebWorker = typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope
 
 if (isRunningInWebWorker) {
     // HACK: @microsoft/fetch-event-source tries to call document.removeEventListener, which is not

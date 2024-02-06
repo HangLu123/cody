@@ -1,14 +1,14 @@
-import type { ContextFile, PreciseContext } from '../../codebase-context/messages'
-import type { Message } from '../../sourcegraph-api'
+import { ContextFile, PreciseContext } from '../../codebase-context/messages'
+import { Message } from '../../sourcegraph-api'
+import { CodyDefaultCommands } from '../prompts'
+import { RecipeID } from '../recipes/recipe'
 
-import type { TranscriptJSON } from '.'
-import type { DefaultCodyCommands } from '../../commands/types'
+import { TranscriptJSON } from '.'
 
 export interface ChatButton {
     label: string
     action: string
     onClick: (action: string) => void
-    appearance?: 'primary' | 'secondary' | 'icon'
 }
 
 export interface ChatMessage extends Message {
@@ -18,34 +18,16 @@ export interface ChatMessage extends Message {
     buttons?: ChatButton[]
     data?: any
     metadata?: ChatMetadata
-    error?: ChatError
 }
 
-export interface InteractionMessage extends ChatMessage {
+export interface InteractionMessage extends Message {
+    displayText?: string
     prefix?: string
+    error?: string
+    metadata?: ChatMetadata
 }
 
-export interface ChatError {
-    kind?: string
-    name: string
-    message: string
-
-    // Rate-limit properties
-    retryAfter?: string | null
-    limit?: number
-    userMessage?: string
-    retryAfterDate?: Date
-    retryAfterDateString?: string // same as retry after Date but JSON serializable
-    retryMessage?: string
-    feature?: string
-    upgradeIsAvailable?: boolean
-
-    // Prevent Error from being passed as ChatError.
-    // Errors should be converted using errorToChatError.
-    isChatErrorGuard: 'isChatErrorGuard'
-}
-
-interface ChatMetadata {
+export interface ChatMetadata {
     source?: ChatEventSource
     requestID?: string
     chatModel?: string
@@ -53,42 +35,25 @@ interface ChatMetadata {
 
 export interface UserLocalHistory {
     chat: ChatHistory
-    input: ChatInputHistory[]
+    input: string[]
 }
 
 export interface ChatHistory {
     [chatID: string]: TranscriptJSON
 }
 
-export interface ChatInputHistory {
-    inputText: string
-    inputContextFiles: ContextFile[]
+export interface OldChatHistory {
+    [chatID: string]: ChatMessage[]
 }
 
 export type ChatEventSource =
     | 'chat'
+    | 'inline-chat'
     | 'editor'
     | 'menu'
-    | 'code-action:explain'
-    | 'code-action:document'
-    | 'code-action:edit'
-    | 'code-action:fix'
-    | 'code-action:generate'
+    | 'code-action'
     | 'custom-commands'
     | 'test'
     | 'code-lens'
-    | DefaultCodyCommands
-
-/**
- * Converts an Error to a ChatError. Note that this cannot be done naively,
- * because some of the Error object's keys are typically not enumerable, and so
- * would be omitted during serialization.
- */
-export function errorToChatError(error: Error): ChatError {
-    return {
-        isChatErrorGuard: 'isChatErrorGuard',
-        ...error,
-        message: error.message,
-        name: error.name,
-    }
-}
+    | CodyDefaultCommands
+    | RecipeID

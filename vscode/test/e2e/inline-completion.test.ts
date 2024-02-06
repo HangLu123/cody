@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test'
+import { expect, Locator, Page } from '@playwright/test'
 
 import { loggedEvents, resetLoggedEvents } from '../fixtures/mock-server'
 
@@ -8,12 +8,7 @@ import { assertEvents, test } from './helpers'
 test.beforeEach(() => {
     resetLoggedEvents()
 })
-
-// TODO Fix flaky test
-test.skip('shows chat sidebar completion onboarding notice on first completion accept', async ({
-    page,
-    sidebar,
-}) => {
+test('shows chat sidebar completion onboarding notice on first completion accept', async ({ page, sidebar }) => {
     const expectedEvents = [
         // First suggest/accept
         'CodyVSCodeExtension:completion:suggested',
@@ -25,9 +20,8 @@ test.skip('shows chat sidebar completion onboarding notice on first completion a
 
     const indexFile = page.getByRole('treeitem', { name: 'index.html' }).locator('a')
     const editor = page.locator('[id="workbench\\.parts\\.editor"]')
-    const notice = page.locator('.onboarding-autocomplete')
-    const chatPanelFrame = page.frameLocator('iframe.webview').last().frameLocator('iframe')
-    const noticeCloseButton = chatPanelFrame.locator('div[class^="_notice-close"] vscode-button').nth(1)
+    const notice = sidebar.locator('.onboarding-autocomplete')
+    const noticeCloseButton = notice.locator('div[class^="_notice-close"] vscode-button')
 
     const firstAcceptedCompletion = editor.getByText('myFirstCompletion')
     // Use .first() to ignore additional instances of this text if inline completion shows
@@ -49,7 +43,7 @@ test.skip('shows chat sidebar completion onboarding notice on first completion a
     // the notice to be shown.
     await acceptInlineCompletion(page)
     await expect(firstAcceptedCompletion).toBeVisible()
-    await expect(chatPanelFrame.locator('.onboarding-autocomplete')).toBeVisible()
+    await expect(notice).toBeVisible()
 
     // Close the notice.
     await noticeCloseButton.click()
@@ -63,10 +57,7 @@ test.skip('shows chat sidebar completion onboarding notice on first completion a
     await assertEvents(loggedEvents, expectedEvents)
 })
 
-test.skip('inline completion onboarding notice on first completion accept', async ({
-    page,
-    sidebar,
-}) => {
+test('inline completion onboarding notice on first completion accept', async ({ page, sidebar }) => {
     const expectedEvents = [
         // First suggest/accept
         'CodyVSCodeExtension:completion:suggested',
@@ -106,14 +97,11 @@ test.skip('inline completion onboarding notice on first completion accept', asyn
     await expect(firstAcceptedCompletion).toBeVisible()
     await expect(decoration).toBeVisible()
 
-    await page.getByRole('tab', { name: 'index.html' }).getByText('index.html').click()
-
     // Modify the document to hide the decoration.
     await page.keyboard.press('a')
-    await expect(page.locator('css=span[class*="TextEditorDecorationType"]')).not.toBeVisible()
+    await expect(decoration).not.toBeVisible()
 
     // Trigger/accept another completion, but don't expect the notification.
-    await page.waitForTimeout(100)
     await triggerInlineCompletionAfter(page, firstAcceptedCompletion, 'myNot')
     await acceptInlineCompletion(page)
     // After accepting a completion, a new completion request will be made. Since this can interfere
@@ -127,17 +115,12 @@ test.skip('inline completion onboarding notice on first completion accept', asyn
     await assertEvents(loggedEvents, expectedEvents)
 })
 
-async function triggerInlineCompletionAfter(
-    page: Page,
-    afterElement: Locator,
-    prefix: string
-): Promise<void> {
+async function triggerInlineCompletionAfter(page: Page, afterElement: Locator, prefix: string): Promise<void> {
     await afterElement.click()
     await page.keyboard.press('End')
     await page.keyboard.press('Enter')
     await page.keyboard.type(prefix)
 
-    // TODO: Fix flaky
     // Wait for ghost text to become visible.
     await page.locator('.ghost-text-decoration').waitFor({ state: 'visible' })
 }

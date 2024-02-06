@@ -2,7 +2,7 @@
 // sequence, trim if from the end.
 const STOP_SEQUENCE_REGEXP = /(H|Hu|Hum|Huma|Human|Human:)$/
 
-export function reformatBotMessageForChat(text: string, prefix: string): string {
+export function reformatBotMessage(text: string, prefix: string): string {
     let reformattedMessage = prefix + text.trimEnd()
 
     const stopSequenceMatch = reformattedMessage.match(STOP_SEQUENCE_REGEXP)

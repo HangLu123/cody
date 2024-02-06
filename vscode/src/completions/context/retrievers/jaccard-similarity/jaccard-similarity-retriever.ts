@@ -1,12 +1,12 @@
-import * as vscode from 'vscode'
-import type { URI } from 'vscode-uri'
+import path from 'path'
 
-import type { ContextRetriever, ContextRetrieverOptions, ContextSnippet } from '../../../types'
+import * as vscode from 'vscode'
+
+import { ContextRetriever, ContextRetrieverOptions, ContextSnippet } from '../../../types'
 import { baseLanguageId } from '../../utils'
 
-import { bestJaccardMatch, type JaccardMatch } from './bestJaccardMatch'
-import { VSCodeDocumentHistory, type DocumentHistory } from './history'
-import { lastNLines } from '../../../text-processing'
+import { bestJaccardMatch, JaccardMatch } from './bestJaccardMatch'
+import { DocumentHistory, VSCodeDocumentHistory } from './history'
 
 /**
  * The size of the Jaccard distance match window in number of lines. It determines how many
@@ -14,7 +14,7 @@ import { lastNLines } from '../../../text-processing'
  * that is most similar to the 'targetText'. In essence, it sets the maximum number
  * of lines that the best match can be. A larger 'windowSize' means larger potential matches
  */
-const SNIPPET_WINDOW_SIZE = 50
+export const SNIPPET_WINDOW_SIZE = 50
 
 /**
  * The Jaccard Similarity Retriever is a sparse, local-only, retrieval strategy that uses local
@@ -25,11 +25,7 @@ export class JaccardSimilarityRetriever implements ContextRetriever {
     public identifier = 'jaccard-similarity'
     private history = new VSCodeDocumentHistory()
 
-    public async retrieve({
-        document,
-        docContext,
-        abortSignal,
-    }: ContextRetrieverOptions): Promise<ContextSnippet[]> {
+    public async retrieve({ document, docContext, abortSignal }: ContextRetrieverOptions): Promise<ContextSnippet[]> {
         const targetText = lastNLines(docContext.prefix, SNIPPET_WINDOW_SIZE)
         const files = await getRelevantFiles(document, this.history)
 
@@ -40,7 +36,12 @@ export class JaccardSimilarityRetriever implements ContextRetriever {
                 continue
             }
 
-            matches.push({ ...match, uri })
+            matches.push({
+                // Use relative path to remove redundant information from the prompts and
+                // keep in sync with embeddings search results which use relative to repo root paths
+                fileName: path.normalize(vscode.workspace.asRelativePath(uri.fsPath)),
+                ...match,
+            })
         }
 
         matches.sort((a, b) => b.score - a.score)
@@ -58,7 +59,7 @@ export class JaccardSimilarityRetriever implements ContextRetriever {
 }
 
 interface JaccardMatchWithFilename extends JaccardMatch {
-    uri: URI
+    fileName: string
 }
 
 interface FileContents {
@@ -182,4 +183,9 @@ async function getRelevantFiles(
         })
     )
     return files
+}
+
+function lastNLines(text: string, n: number): string {
+    const lines = text.split('\n')
+    return lines.slice(Math.max(0, lines.length - n)).join('\n')
 }

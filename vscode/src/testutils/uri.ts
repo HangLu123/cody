@@ -1,5 +1,5 @@
 import { URI, Utils } from 'vscode-uri'
-import type { UriComponents } from 'vscode-uri/lib/umd/uri'
+import { UriComponents } from 'vscode-uri/lib/umd/uri'
 
 /**
  *
@@ -18,7 +18,7 @@ import type { UriComponents } from 'vscode-uri/lib/umd/uri'
  * We tried copy-pasting the full implementation of `vscode.Uri` into this
  * repository but it required adding >3k lines of code with minor that we have
  * to keep up-to-date and maintain. https://github.com/sourcegraph/cody/pull/1264
-
+ 
  * We tried using `Proxy` to avoid having to reimplement all APIs but this
  * solution didn't faithfully reproduce the behavior of `instanceof` checks.
  * https://github.com/sourcegraph/cody/pull/1335
@@ -31,12 +31,12 @@ export class Uri {
         return new Uri(URI.parse(value, strict))
     }
 
-    public static file(path: string): Uri {
+    public static file(path: string): URI {
         return new Uri(URI.file(path))
     }
 
     public static joinPath(base: Uri, ...pathSegments: string[]): Uri {
-        return new Uri(Utils.joinPath(base.uri ?? new Uri(base), ...pathSegments))
+        return new Uri(Utils.joinPath(base.uri, ...pathSegments))
     }
 
     public static from(components: {

@@ -5,7 +5,7 @@ interface Action {
     onClick: () => Thenable<void>
 }
 
-interface ActionNotification {
+export interface ActionNotification {
     message: string
     options?: vscode.MessageOptions
     actions: Action[]
@@ -14,11 +14,7 @@ interface ActionNotification {
 /**
  * Displays a VS Code information message with actions.
  */
-export const showActionNotification = async ({
-    message,
-    options = {},
-    actions,
-}: ActionNotification): Promise<void> => {
+export const showActionNotification = async ({ message, options = {}, actions }: ActionNotification): Promise<void> => {
     const response = await vscode.window.showInformationMessage(
         message,
         options,

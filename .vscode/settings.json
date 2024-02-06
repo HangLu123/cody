@@ -2,10 +2,12 @@
   "search.exclude": {
     "**/node_modules": true,
     "**/dist": true,
+    "**/.eslintcache": true,
     "**/.vscode-test": true,
     "**/.vscode-test-web": true
   },
   "files.exclude": {
+    "**/.eslintcache": true,
     "**/.vscode-test": true,
     "**/.vscode-test-web": true
   },
@@ -18,5 +20,20 @@
   "typescript.tsc.autoDetect": "off",
   "typescript.tsdk": "node_modules/typescript/lib",
   "task.allowAutomaticTasks": "on",
-  "editor.defaultFormatter": "biomejs.biome"
+  "eslint.lintTask.enable": false,
+  "eslint.validate": ["javascript", "javascriptreact", "typescript", "typescriptreact"],
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": true
+  },
+  "eslint.codeActionsOnSave.mode": "problems",
+  "eslint.options": { "cache": true },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  }
 }

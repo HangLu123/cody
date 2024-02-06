@@ -1,18 +1,15 @@
 import * as vscode from 'vscode'
 
-import type {
-    CompletionLogger,
+import { CompletionLogger } from '@sourcegraph/cody-shared/src/sourcegraph-api/completions/client'
+import {
     CompletionParameters,
     CompletionResponse,
     Event,
-} from '@sourcegraph/cody-shared'
+} from '@sourcegraph/cody-shared/src/sourcegraph-api/completions/types'
 
 import { getConfiguration } from './configuration'
 
-export const outputChannel: vscode.OutputChannel = vscode.window.createOutputChannel(
-    'Cody by Sourcegraph',
-    'json'
-)
+export const outputChannel: vscode.OutputChannel = vscode.window.createOutputChannel('Cody by Sourcegraph', 'json')
 
 /**
  * Logs a debug message to the "Cody by Sourcegraph" output channel.
@@ -93,7 +90,7 @@ function log(level: 'debug' | 'error', filterLabel: string, text: string, ...arg
 }
 
 export const logger: CompletionLogger = {
-    startCompletion(params: CompletionParameters | Record<string, never>, endpoint: string) {
+    startCompletion(params: CompletionParameters | {}) {
         const workspaceConfig = vscode.workspace.getConfiguration()
         const config = getConfiguration(workspaceConfig)
 
@@ -102,30 +99,19 @@ export const logger: CompletionLogger = {
         }
 
         const start = Date.now()
-        const type =
-            'prompt' in params
-                ? 'code-completion'
-                : 'messages' in params
-                  ? 'completion'
-                  : 'code-completion'
+        const type = 'prompt' in params ? 'code-completion' : 'messages' in params ? 'completion' : 'code-completion'
         let hasFinished = false
         let lastCompletion = ''
 
-        function onError(err: string, rawError?: unknown): void {
+        function onError(err: string): void {
             if (hasFinished) {
                 return
             }
             hasFinished = true
-
-            if (process.env.NODE_ENV === 'development') {
-                console.error(rawError)
-            }
-
             logError(
                 'CompletionLogger:onError',
                 JSON.stringify({
                     type,
-                    endpoint,
                     status: 'error',
                     duration: Date.now() - start,
                     err,
@@ -134,9 +120,7 @@ export const logger: CompletionLogger = {
             )
         }
 
-        function onComplete(
-            result: string | CompletionResponse | string[] | CompletionResponse[]
-        ): void {
+        function onComplete(result: string | CompletionResponse | string[] | CompletionResponse[]): void {
             if (hasFinished) {
                 return
             }
@@ -146,7 +130,6 @@ export const logger: CompletionLogger = {
                 'CompletionLogger:onComplete',
                 JSON.stringify({
                     type,
-                    endpoint,
                     status: 'success',
                     duration: Date.now() - start,
                 }),

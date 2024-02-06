@@ -1,33 +1,22 @@
-import type * as vscode from 'vscode'
-import type { URI } from 'vscode-uri'
+import * as vscode from 'vscode'
+import { URI } from 'vscode-uri'
 
-import {
-    FeatureFlag,
-    getActiveTraceAndSpanId,
-    isAbortError,
-    wrapInActiveSpan,
-} from '@sourcegraph/cody-shared'
+import { isAbortError } from '@sourcegraph/cody-shared/src/sourcegraph-api/errors'
+import { getActiveTraceAndSpanId, startAsyncSpan } from '@sourcegraph/cody-shared/src/tracing'
 
 import { logError } from '../log'
-import type { CompletionIntent } from '../tree-sitter/query-sdk'
+import { CompletionIntent } from '../tree-sitter/query-sdk'
 
-import type { ContextMixer } from './context/context-mixer'
-import { insertIntoDocContext, type DocumentContext } from './get-current-doc-context'
+import { ContextMixer } from './context/context-mixer'
+import { DocumentContext } from './get-current-doc-context'
+import { AutocompleteItem } from './inline-completion-item-provider'
 import * as CompletionLogger from './logger'
-import type { CompletionLogID } from './logger'
-import type {
-    CompletionProviderTracer,
-    Provider,
-    ProviderConfig,
-    ProviderOptions,
-} from './providers/provider'
-import type { RequestManager, RequestParams } from './request-manager'
+import { CompletionLogID } from './logger'
+import { CompletionProviderTracer, Provider, ProviderConfig, ProviderOptions } from './providers/provider'
+import { RequestManager, RequestParams } from './request-manager'
 import { reuseLastCandidate } from './reuse-last-candidate'
-import type { AutocompleteItem } from './suggested-autocomplete-items-cache'
-import type { InlineCompletionItemWithAnalytics } from './text-processing/process-inline-completions'
-import type { ProvideInlineCompletionsItemTraceData } from './tracer'
-import { isValidTestFile } from '../commands/utils/test-commands'
-import { completionProviderConfig } from './completion-provider-config'
+import { InlineCompletionItemWithAnalytics } from './text-processing/process-inline-completions'
+import { ProvideInlineCompletionsItemTraceData } from './tracer'
 
 export interface InlineCompletionsParams {
     // Context
@@ -37,7 +26,6 @@ export interface InlineCompletionsParams {
     selectedCompletionInfo: vscode.SelectedCompletionInfo | undefined
     docContext: DocumentContext
     completionIntent?: CompletionIntent
-    lastAcceptedCompletionItem?: Pick<AutocompleteItem, 'requestParams' | 'analyticsItem'>
 
     // Prompt parameters
     providerConfig: ProviderConfig
@@ -47,7 +35,6 @@ export interface InlineCompletionsParams {
     contextMixer: ContextMixer
 
     // UI state
-    isDotComUser: boolean
     lastCandidate?: LastInlineCompletionCandidate
     debounceInterval?: { singleLine: number; multiLine: number }
     setIsLoading?: (isLoading: boolean) => void
@@ -59,6 +46,7 @@ export interface InlineCompletionsParams {
 
     // Feature flags
     completeSuggestWidgetSelection?: boolean
+    dynamicMultlilineCompletions?: boolean
 
     // Callbacks to accept completions
     handleDidAcceptCompletionItem?: (
@@ -110,7 +98,6 @@ export interface InlineCompletionsResult {
 export enum InlineCompletionsResultSource {
     Network = 'Network',
     Cache = 'Cache',
-    HotStreak = 'HotStreak',
     CacheAfterRequestStart = 'CacheAfterRequestStart',
 
     /**
@@ -141,14 +128,13 @@ export enum TriggerKind {
     SuggestWidget = 'SuggestWidget',
 }
 
-export async function getInlineCompletions(
-    params: InlineCompletionsParams
-): Promise<InlineCompletionsResult | null> {
+export async function getInlineCompletions(params: InlineCompletionsParams): Promise<InlineCompletionsResult | null> {
     try {
         const result = await doGetInlineCompletions(params)
         params.tracer?.({ result })
         return result
     } catch (unknownError: unknown) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const error = unknownError instanceof Error ? unknownError : new Error(unknownError as any)
 
         params.tracer?.({ error: error.toString() })
@@ -170,9 +156,7 @@ export async function getInlineCompletions(
     }
 }
 
-async function doGetInlineCompletions(
-    params: InlineCompletionsParams
-): Promise<InlineCompletionsResult | null> {
+async function doGetInlineCompletions(params: InlineCompletionsParams): Promise<InlineCompletionsResult | null> {
     const {
         document,
         position,
@@ -192,8 +176,7 @@ async function doGetInlineCompletions(
         handleDidPartiallyAcceptCompletionItem,
         artificialDelay,
         completionIntent,
-        lastAcceptedCompletionItem,
-        isDotComUser,
+        dynamicMultlilineCompletions,
     } = params
 
     tracer?.({ params: { document, position, triggerKind, selectedCompletionInfo } })
@@ -214,35 +197,9 @@ async function doGetInlineCompletions(
     }
 
     // Do not trigger when cursor is at the start of the file ending line and the line above is empty
-    if (
-        triggerKind !== TriggerKind.Manual &&
-        position.line !== 0 &&
-        position.line === document.lineCount - 1
-    ) {
+    if (triggerKind !== TriggerKind.Manual && position.line !== 0 && position.line === document.lineCount - 1) {
         const lineAbove = Math.max(position.line - 1, 0)
         if (document.lineAt(lineAbove).isEmptyOrWhitespace && !position.character) {
-            return null
-        }
-    }
-
-    // Do not trigger when the user just accepted a single-line completion
-    if (
-        triggerKind !== TriggerKind.Manual &&
-        lastAcceptedCompletionItem &&
-        lastAcceptedCompletionItem.requestParams.document.uri.toString() === document.uri.toString() &&
-        lastAcceptedCompletionItem.requestParams.docContext.multilineTrigger === null
-    ) {
-        const docContextOfLastAcceptedAndInsertedCompletionItem = insertIntoDocContext({
-            docContext: lastAcceptedCompletionItem.requestParams.docContext,
-            insertText: lastAcceptedCompletionItem.analyticsItem.insertText,
-            languageId: lastAcceptedCompletionItem.requestParams.document.languageId,
-            dynamicMultilineCompletions: false,
-        })
-        if (
-            docContext.prefix === docContextOfLastAcceptedAndInsertedCompletionItem.prefix &&
-            docContext.suffix === docContextOfLastAcceptedAndInsertedCompletionItem.suffix &&
-            docContext.position.isEqual(docContextOfLastAcceptedAndInsertedCompletionItem.position)
-        ) {
             return null
         }
     }
@@ -276,17 +233,15 @@ async function doGetInlineCompletions(
         providerIdentifier: providerConfig.identifier,
         providerModel: providerConfig.model,
         languageId: document.languageId,
-        testFile: isValidTestFile(document.uri),
         completionIntent,
         artificialDelay,
         traceId: getActiveTraceAndSpanId()?.traceId,
     })
 
     // Debounce to avoid firing off too many network requests as the user is still typing.
-    await wrapInActiveSpan('autocomplete.debounce', async () => {
+    await startAsyncSpan('autocomplete.debounce', async () => {
         const interval =
-            ((multiline ? debounceInterval?.multiLine : debounceInterval?.singleLine) ?? 0) +
-            (artificialDelay ?? 0)
+            ((multiline ? debounceInterval?.multiLine : debounceInterval?.singleLine) ?? 0) + (artificialDelay ?? 0)
         if (triggerKind === TriggerKind.Automatic && interval !== undefined && interval > 0) {
             await new Promise<void>(resolve => setTimeout(resolve, interval))
         }
@@ -301,13 +256,13 @@ async function doGetInlineCompletions(
     CompletionLogger.start(logId)
 
     // Fetch context
-    const contextResult = await wrapInActiveSpan('autocomplete.retrieve', async () => {
+    const contextResult = await startAsyncSpan('autocomplete.retrieve', async () => {
         return contextMixer.getContext({
             document,
             position,
             docContext,
             abortSignal,
-            maxChars: providerConfig.contextSizeHints.totalChars,
+            maxChars: providerConfig.contextSizeHints.totalFileContextChars,
         })
     })
     if (abortSignal?.aborted) {
@@ -315,26 +270,25 @@ async function doGetInlineCompletions(
     }
     tracer?.({ context: contextResult })
 
-    const completionProvider = getCompletionProvider({
+    // Completion providers
+    const completionProviders = getCompletionProviders({
         document,
         position,
         triggerKind,
         providerConfig,
         docContext,
+        dynamicMultlilineCompletions,
     })
-
     tracer?.({
-        completers: [
-            {
-                ...completionProvider.options,
-                completionIntent,
-            },
-        ],
+        completers: completionProviders.map(({ options }) => ({
+            ...options,
+            completionIntent,
+        })),
     })
 
     CompletionLogger.networkRequestStarted(logId, contextResult?.logSummary)
 
-    const requestParams: RequestParams = {
+    const reqContext: RequestParams = {
         document,
         docContext,
         position,
@@ -343,15 +297,21 @@ async function doGetInlineCompletions(
     }
 
     // Get the processed completions from providers
-    const { completions, source } = await requestManager.request({
-        requestParams,
-        provider: completionProvider,
-        context: contextResult?.context ?? [],
-        isCacheEnabled: triggerKind !== TriggerKind.Manual,
-        tracer: tracer ? createCompletionProviderTracer(tracer) : undefined,
-    })
+    const { completions, cacheHit } = await requestManager.request(
+        reqContext,
+        completionProviders,
+        contextResult?.context ?? [],
+        tracer ? createCompletionProviderTracer(tracer) : undefined
+    )
 
-    CompletionLogger.loaded(logId, requestParams, completions, source, isDotComUser)
+    const source =
+        cacheHit === 'hit'
+            ? InlineCompletionsResultSource.Cache
+            : cacheHit === 'hit-after-request-started'
+            ? InlineCompletionsResultSource.CacheAfterRequestStart
+            : InlineCompletionsResultSource.Network
+
+    CompletionLogger.loaded(logId, reqContext, completions, source)
 
     return {
         logId,
@@ -361,43 +321,43 @@ async function doGetInlineCompletions(
 }
 
 interface GetCompletionProvidersParams
-    extends Pick<InlineCompletionsParams, 'document' | 'position' | 'triggerKind' | 'providerConfig'> {
+    extends Pick<
+        InlineCompletionsParams,
+        'document' | 'position' | 'triggerKind' | 'providerConfig' | 'dynamicMultlilineCompletions'
+    > {
     docContext: DocumentContext
 }
 
-function getCompletionProvider(params: GetCompletionProvidersParams): Provider {
-    const { document, position, triggerKind, providerConfig, docContext } = params
+function getCompletionProviders(params: GetCompletionProvidersParams): Provider[] {
+    const { document, position, triggerKind, providerConfig, docContext, dynamicMultlilineCompletions } = params
 
     const sharedProviderOptions: Omit<ProviderOptions, 'id' | 'n' | 'multiline'> = {
         docContext,
         document,
         position,
-        dynamicMultilineCompletions: completionProviderConfig.dynamicMultilineCompletions,
-        hotStreak: completionProviderConfig.hotStreak,
-        fastPath: completionProviderConfig.fastPath,
-        // For the now the value is static and based on the average multiline completion latency.
-        firstCompletionTimeout: 1900,
+        dynamicMultlilineCompletions,
     }
 
     if (docContext.multilineTrigger) {
-        return providerConfig.create({
-            ...sharedProviderOptions,
-            n: completionProviderConfig.getPrefetchedFlag(
-                FeatureFlag.CodyAutocompleteSingleMultilineRequest
-            )
-                ? 1
-                : 3, // 3 vs. 1 does not meaningfully affect perf
-            multiline: true,
-        })
+        return [
+            providerConfig.create({
+                id: 'multiline',
+                ...sharedProviderOptions,
+                n: 3, // 3 vs. 1 does not meaningfully affect perf
+                multiline: true,
+            }),
+        ]
     }
-
-    return providerConfig.create({
-        ...sharedProviderOptions,
-        // Show more if manually triggered (but only showing 1 is faster, so we use it
-        // in the automatic trigger case).
-        n: triggerKind === TriggerKind.Automatic ? 1 : 3,
-        multiline: false,
-    })
+    return [
+        providerConfig.create({
+            id: 'single-line-suffix',
+            ...sharedProviderOptions,
+            // Show more if manually triggered (but only showing 1 is faster, so we use it
+            // in the automatic trigger case).
+            n: triggerKind === TriggerKind.Automatic ? 1 : 3,
+            multiline: false,
+        }),
+    ]
 }
 
 function createCompletionProviderTracer(

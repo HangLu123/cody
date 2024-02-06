@@ -1,4 +1,4 @@
-interface FileChunkContext {
+export interface FileChunkContext {
     type: 'FileChunkContext'
     filePath: string
     content: string
@@ -8,7 +8,7 @@ interface FileChunkContext {
     revision: string
 }
 
-type UnifiedContextFetcherResult = FileChunkContext | { type: 'UnknownContext' }
+export type UnifiedContextFetcherResult = FileChunkContext | { type: 'UnknownContext' }
 
 export interface UnifiedContextFetcher {
     getContext(

@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-    getFirstLine,
-    getLastLine,
-    getNextNonEmptyLine,
-    getPrevNonEmptyLine,
-    lines,
-    removeIndentation,
-} from './utils'
+import { getFirstLine, getLastLine, getNextNonEmptyLine, getPrevNonEmptyLine, lines } from './utils'
 
 describe('getNextNonEmptyLine', () => {
     it.each(
@@ -96,17 +89,3 @@ function withCRLFExamples(examples: string[][]): string[][] {
     }
     return examples.concat(crlfExample)
 }
-
-describe('removeIndentation', () => {
-    it.each([
-        ['  foo', 'foo'],
-        ['    bar', 'bar'],
-        ['\tfoo', 'foo'],
-        ['foo', 'foo'],
-        ['\tfoo\n  bar', 'foo\nbar'],
-        ['\tfoo\r\n  bar', 'foo\r\nbar'],
-        ['', ''],
-    ])('should work for %j', (text, expected) => {
-        expect(removeIndentation(text)).toEqual(expected)
-    })
-})

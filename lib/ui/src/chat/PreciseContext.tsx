@@ -1,8 +1,8 @@
-import type { FunctionComponent } from 'react'
+import { FunctionComponent } from 'react'
 
 import { mdiGraphOutline, mdiMagnify } from '@mdi/js'
 
-import { pluralize, type PreciseContext } from '@sourcegraph/cody-shared'
+import { pluralize, PreciseContext } from '@sourcegraph/cody-shared'
 
 import { TranscriptAction } from './actions/TranscriptAction'
 

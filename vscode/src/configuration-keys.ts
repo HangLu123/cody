@@ -4,11 +4,6 @@ import packageJson from '../package.json'
 
 const { properties } = packageJson.contributes.configuration
 
-export function defaultConfigurationValue(key: string): any {
-    const value = (properties as any)[key as any]?.default
-    return value
-}
-
 export type ConfigurationKeysMap = {
     // Use key remapping to get a nice typescript interface with the correct keys.
     // https://www.typescriptlang.org/docs/handbook/2/mapped-types.html#key-remapping-via-as
@@ -21,6 +16,7 @@ function getConfigFromPackageJson(): ConfigurationKeysMap {
         const keyProperty = camelCase(key.split('.').slice(1).join('.')) as keyof ConfigurationKeysMap
 
         // This is just to hard to type correctly 😜 and it's doesn't make any difference.
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
         acc[keyProperty] = key as ConfigurationKeysMap[typeof keyProperty]
 
@@ -56,7 +52,7 @@ type CamelCaseDotSeparatedFragments<T extends string> = T extends `${infer A}.${
  *
  * We should avoid specifiying config keys manually and instead rely on constant.
  * No manual changes will be required in this file when changing configuration keys in package.json.
- * TypeScript will error for all outdated/missing keys.
+ * Typescript will error for all outdated/missing keys.
  */
 export const CONFIG_KEY = getConfigFromPackageJson()
 

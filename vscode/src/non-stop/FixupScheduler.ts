@@ -1,4 +1,4 @@
-import type { FixupIdleTaskRunner } from './roles'
+import { FixupIdleTaskRunner } from './roles'
 
 /**
  * Runs callbacks "later".
@@ -20,7 +20,8 @@ export class FixupScheduler implements FixupIdleTaskRunner {
 
     /**
      * Schedules a callback which will run when the event loop is idle.
-     * @param worker the callback to run.
+     *
+     * @param callback the callback to run.
      */
     public scheduleIdle<T>(worker: () => T): Promise<T> {
         if (!this.work_.length) {

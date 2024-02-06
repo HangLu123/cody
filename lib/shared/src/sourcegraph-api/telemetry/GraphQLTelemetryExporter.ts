@@ -1,12 +1,13 @@
-import type { TelemetryEventInput, TelemetryExporter } from '@sourcegraph/telemetry'
+import { TelemetryEventInput, TelemetryExporter } from '@sourcegraph/telemetry'
 
-import { logDebug, logError } from '../../logger'
 import { isError } from '../../utils'
-import type { LogEventMode, SourcegraphGraphQLAPIClient } from '../graphql/client'
+import { LogEventMode, SourcegraphGraphQLAPIClient } from '../graphql/client'
+
+type ExportMode = 'legacy' | '5.2.0-5.2.1' | '5.2.2+'
 
 /**
  * GraphQLTelemetryExporter exports events via the new Sourcegraph telemetry
- * framework: https://sourcegraph.com/docs/dev/background-information/telemetry
+ * framework: https://docs.sourcegraph.com/dev/background-information/telemetry
  *
  * If configured to do so, it will also attempt to send events to the old
  * event-logging mutations if the instance is older than 5.2.0.
@@ -43,32 +44,21 @@ export class GraphQLTelemetryExporter implements TelemetryExporter {
         if (this.exportMode === undefined) {
             const siteVersion = await this.client.getSiteVersion()
             if (isError(siteVersion)) {
-                logError(
-                    'GraphQLTelemetryExporter',
-                    'telemetry: failed to evaluate server version:',
-                    siteVersion
-                )
+                console.warn('telemetry: failed to evaluate server version:', siteVersion)
                 return // we can try again later
             }
 
             const insiderBuild = siteVersion.length > 12 || siteVersion.includes('dev')
             if (insiderBuild) {
-                this.exportMode = '5.2.5+' // use full export, set to 'legacy' to test backcompat mode
+                this.exportMode = '5.2.2+' // use full export, set to 'legacy' to test backcompat mode
             } else if (siteVersion === '5.2.0' || siteVersion === '5.2.1') {
-                // special handling required before https://github.com/sourcegraph/sourcegraph/pull/57719
-                this.exportMode = '5.2.0-5.2.1'
-            } else if (siteVersion === '5.2.2' || siteVersion === '5.2.3') {
-                // special handling required before https://github.com/sourcegraph/sourcegraph/pull/58643 and https://github.com/sourcegraph/sourcegraph/pull/58539
-                this.exportMode = '5.2.2-5.2.3'
-            } else if (siteVersion === '5.2.4') {
-                // special handling required before https://github.com/sourcegraph/sourcegraph/pull/58944
-                this.exportMode = '5.2.4'
-            } else if (siteVersion >= '5.2.5') {
-                this.exportMode = '5.2.5+'
+                this.exportMode = '5.2.0-5.2.1' // special handling required for https://github.com/sourcegraph/sourcegraph/pull/57719
+            } else if (siteVersion > '5.2.2') {
+                this.exportMode = '5.2.2+'
             } else {
                 this.exportMode = 'legacy'
             }
-            logDebug('GraphQLTelemetryExporter', 'evaluated export mode:', this.exportMode)
+            console.log('telemetry: evaluated export mode:', this.exportMode)
         }
         if (this.exportMode === 'legacy' && this.legacySiteIdentification === undefined) {
             const siteIdentification = await this.client.getSiteIdentification()
@@ -98,7 +88,6 @@ export class GraphQLTelemetryExporter implements TelemetryExporter {
          * if setLegacyEventsStateOnce determines we need to do so.
          */
         if (this.exportMode === 'legacy') {
-            console.log({ legacyBackcompatLogEventMode: this.legacyBackcompatLogEventMode })
             const resultOrError = await Promise.all(
                 events.map(event =>
                     this.client.logEvent(
@@ -109,7 +98,6 @@ export class GraphQLTelemetryExporter implements TelemetryExporter {
                             url: event.marketingTracking?.url || '',
                             publicArgument: () =>
                                 event.parameters.metadata?.reduce((acc, curr) => ({
-                                    // biome-ignore lint/performance/noAccumulatingSpread: TODO(sqs): this is a legit perf issue
                                     ...acc,
                                     [curr.key]: curr.value,
                                 })),
@@ -123,24 +111,23 @@ export class GraphQLTelemetryExporter implements TelemetryExporter {
                 )
             )
             if (isError(resultOrError)) {
-                logError(
-                    'GraphQLTelemetryExporter',
-                    'Error exporting telemetry events as legacy event logs:',
-                    resultOrError,
-                    {
-                        legacyBackcompatLogEventMode: this.legacyBackcompatLogEventMode,
-                    }
-                )
+                console.error('Error exporting telemetry events as legacy event logs:', resultOrError, {
+                    legacyBackcompatLogEventMode: this.legacyBackcompatLogEventMode,
+                })
             }
 
             return
         }
 
         /**
-         * Manipulate events as needed based on version of target instance
+         * In early releases, the privateMetadata field is broken. Circumvent
+         * this by filtering out the privateMetadata field for now.
+         * https://github.com/sourcegraph/sourcegraph/pull/57719
          */
-        if (this.exportMode) {
-            handleExportModeTransforms(this.exportMode, events)
+        if (this.exportMode === '5.2.0-5.2.1') {
+            events.forEach(event => {
+                event.parameters.privateMetadata = undefined
+            })
         }
 
         /**
@@ -148,64 +135,7 @@ export class GraphQLTelemetryExporter implements TelemetryExporter {
          */
         const resultOrError = await this.client.recordTelemetryEvents(events)
         if (isError(resultOrError)) {
-            logError('GraphQLTelemetryExporter', 'Error exporting telemetry events:', resultOrError)
-        }
-    }
-}
-
-type ExportMode = 'legacy' | '5.2.0-5.2.1' | '5.2.2-5.2.3' | '5.2.4' | '5.2.5+'
-
-/**
- * handleExportModeTransforms mutates events in-place based on any workarounds
- * required for exportMode.
- */
-export function handleExportModeTransforms(exportMode: ExportMode, events: TelemetryEventInput[]): void {
-    if (exportMode === 'legacy') {
-        throw new Error('legacy export mode should not publish new telemetry events')
-    }
-
-    /**
-     * In early releases, the privateMetadata field is broken. Circumvent
-     * this by filtering out the privateMetadata field for now.
-     * https://github.com/sourcegraph/sourcegraph/pull/57719
-     */
-    if (exportMode === '5.2.0-5.2.1') {
-        for (const event of events) {
-            if (event.parameters) {
-                event.parameters.privateMetadata = undefined
-            }
-        }
-    }
-
-    /**
-     * In early releases, we don't correctly accept float metadata values
-     * that may be provided as number. Circumvent this by rounding all
-     * metadata values by default.
-     * https://github.com/sourcegraph/sourcegraph/pull/58643
-     *
-     * We also don't support a interaction ID as a first-class citizen, as it
-     * was only added in 5.2.4: https://github.com/sourcegraph/sourcegraph/pull/58539
-     */
-    if (exportMode === '5.2.0-5.2.1' || exportMode === '5.2.2-5.2.3') {
-        for (const event of events) {
-            if (event.parameters) {
-                if (event.parameters.metadata) {
-                    for (const entry of event.parameters.metadata) {
-                        entry.value = Math.round(entry.value)
-                    }
-                }
-                event.parameters.interactionID = undefined
-            }
-        }
-    }
-
-    /**
-     * timestamp was only added in 5.2.5 and later:
-     * https://github.com/sourcegraph/sourcegraph/pull/58944
-     */
-    if (exportMode === '5.2.0-5.2.1' || exportMode === '5.2.2-5.2.3' || exportMode === '5.2.4') {
-        for (const event of events) {
-            event.timestamp = undefined
+            console.error('Error exporting telemetry events:', resultOrError)
         }
     }
 }

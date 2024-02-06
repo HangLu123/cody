@@ -2,19 +2,23 @@ import dedent from 'dedent'
 import { describe, expect, it } from 'vitest'
 
 import { InlineCompletionsResultSource } from '../get-inline-completions'
-import { completion } from '../test-helpers'
+import { completion, nextTick } from '../test-helpers'
 
-import { getInlineCompletions, params, type V } from './helpers'
+import { getInlineCompletions, params, V } from './helpers'
 
 describe('[getInlineCompletions] streaming', () => {
     it('terminates early for a single-line request', async () => {
+        const abortController = new AbortController()
         expect(
             await getInlineCompletions({
                 ...params('const x = █', [completion`├1337\nconsole.log('what?');┤`], {
-                    *completionResponseGenerator() {
-                        yield completion`├1337\ncon┤`
+                    async onNetworkRequest(_params, onPartialResponse) {
+                        onPartialResponse?.(completion`├1337\ncon┤`)
+                        await nextTick()
+                        expect(abortController.signal.aborted).toBe(true)
                     },
                 }),
+                abortSignal: abortController.signal,
             })
         ).toEqual<V>({
             items: [{ insertText: '1337' }],
@@ -23,14 +27,20 @@ describe('[getInlineCompletions] streaming', () => {
     })
 
     it('does not include unfinished lines in results', async () => {
+        const abortController = new AbortController()
         expect(
             await getInlineCompletions({
                 ...params('const x = █', [completion`├1337\nconsole.log('what?');┤`], {
-                    *completionResponseGenerator() {
-                        yield completion`├13┤`
-                        yield completion`├1337\n┤`
+                    async onNetworkRequest(_params, onPartialResponse) {
+                        onPartialResponse?.(completion`├13┤`)
+                        await nextTick()
+                        expect(abortController.signal.aborted).toBe(false)
+                        onPartialResponse?.(completion`├1337\n┤`)
+                        await nextTick()
+                        expect(abortController.signal.aborted).toBe(true)
                     },
                 }),
+                abortSignal: abortController.signal,
             })
         ).toEqual<V>({
             items: [{ insertText: '1337' }],
@@ -39,6 +49,7 @@ describe('[getInlineCompletions] streaming', () => {
     })
 
     it('uses the multi-line truncation logic to terminate early for multi-line completions', async () => {
+        const abortController = new AbortController()
         const result = await getInlineCompletions({
             ...params(
                 dedent`
@@ -55,20 +66,25 @@ describe('[getInlineCompletions] streaming', () => {
                             `,
                 ],
                 {
-                    *completionResponseGenerator() {
-                        yield completion`
-                                ├console.log('what?')┤
-                            ┴┴┴┴
-                        `
-                        yield completion`
-                                ├console.log('what?')
-                            }
+                    async onNetworkRequest(_params, onPartialResponse) {
+                        onPartialResponse?.(completion`
+                                        ├console.log('what?')┤
+                                    ┴┴┴┴
+                                `)
+                        await nextTick()
+                        expect(abortController.signal.aborted).toBe(false)
+                        onPartialResponse?.(completion`
+                                        ├console.log('what?')
+                                    }
 
-                            function never(){}┤
-                        `
+                                    function never(){}┤
+                                `)
+                        await nextTick()
+                        expect(abortController.signal.aborted).toBe(true)
                     },
                 }
             ),
+            abortSignal: abortController.signal,
         })
 
         expect(result?.items.map(item => item.insertText)).toEqual(["console.log('what?')"])
@@ -76,6 +92,7 @@ describe('[getInlineCompletions] streaming', () => {
     })
 
     it('uses the next non-empty line comparison logic to terminate early for multi-line completions', async () => {
+        const abortController = new AbortController()
         expect(
             await getInlineCompletions({
                 ...params(
@@ -93,20 +110,25 @@ describe('[getInlineCompletions] streaming', () => {
                             `,
                     ],
                     {
-                        *completionResponseGenerator() {
-                            yield completion`
-                                    ├const a = new Array()
-                                    console.log('oh no')┤
-                                ┴┴┴┴
-                            `
-                            yield completion`
-                                    ├const a = new Array()
-                                    console.log('oh no')
-                                ┤
-                            `
+                        async onNetworkRequest(_params, onPartialResponse) {
+                            onPartialResponse?.(completion`
+                                        ├const a = new Array()
+                                        console.log('oh no')┤
+                                    ┴┴┴┴
+                                `)
+                            await nextTick()
+                            expect(abortController.signal.aborted).toBe(false)
+                            onPartialResponse?.(completion`
+                                        ├const a = new Array()
+                                        console.log('oh no')
+                                    ┤
+                                `)
+                            await nextTick()
+                            expect(abortController.signal.aborted).toBe(true)
                         },
                     }
                 ),
+                abortSignal: abortController.signal,
             })
         ).toEqual<V>({
             items: [{ insertText: 'const a = new Array()' }],
@@ -115,6 +137,8 @@ describe('[getInlineCompletions] streaming', () => {
     })
 
     it('uses the multi-line truncation logic to terminate early for multi-line completions with leading new line', async () => {
+        const abortController = new AbortController()
+
         const result = await getInlineCompletions({
             ...params(
                 dedent`
@@ -126,13 +150,21 @@ describe('[getInlineCompletions] streaming', () => {
                     completion`\nconst merge = (left, right) => {\n  let arr = [];\n  while (left.length && right.length) {\n    if (true) {}\n  }\n}\nconsole.log()`,
                 ],
                 {
-                    *completionResponseGenerator() {
-                        yield completion`\nconst merge = (left, right) => {\n  let arr = [];\n  while (left.length && right.length) {\n    if (`
-
-                        yield completion`\nconst merge = (left, right) => {\n  let arr = [];\n  while (left.length && right.length) {\n    if (true) {}\n  }\n}\nconsole.log()\n`
+                    async onNetworkRequest(_params, onPartialResponse) {
+                        onPartialResponse?.(
+                            completion`\nconst merge = (left, right) => {\n  let arr = [];\n  while (left.length && right.length) {\n    if (`
+                        )
+                        await nextTick()
+                        expect(abortController.signal.aborted).toBe(false)
+                        onPartialResponse?.(
+                            completion`\nconst merge = (left, right) => {\n  let arr = [];\n  while (left.length && right.length) {\n    if (true) {}\n  }\n}\nconsole.log()\n`
+                        )
+                        await nextTick()
+                        expect(abortController.signal.aborted).toBe(true)
                     },
                 }
             ),
+            abortSignal: abortController.signal,
         })
 
         expect(result?.items[0].insertText).toMatchInlineSnapshot(`
@@ -145,7 +177,9 @@ describe('[getInlineCompletions] streaming', () => {
         expect(result?.source).toBe(InlineCompletionsResultSource.Network)
     })
 
-    it('cuts-off multlineline compeltions with inconsistent indentation correctly', async () => {
+    it.skip('cuts-off multlineline compeltions with inconsistent indentation correctly', async () => {
+        const abortController = new AbortController()
+
         const result = await getInlineCompletions({
             ...params(
                 dedent`
@@ -155,11 +189,14 @@ describe('[getInlineCompletions] streaming', () => {
                 `,
                 [completion`// Bubble sort algorithm\nconst numbers = [5, 3, 6, 2, 10];\n`],
                 {
-                    *completionResponseGenerator() {
-                        yield completion`// Bubble sort algorithm\nconst numbers = [5, 3, 6, 2, 10];\n`
+                    async onNetworkRequest(_params, onPartialResponse) {
+                        onPartialResponse?.(completion`// Bubble sort algorithm\nconst numbers = [5, 3, 6, 2, 10];\n`)
+                        await nextTick()
+                        expect(abortController.signal.aborted).toBe(false)
                     },
                 }
             ),
+            abortSignal: abortController.signal,
         })
 
         expect(result?.items[0].insertText).toMatchInlineSnapshot('"// Bubble sort algorithm"')

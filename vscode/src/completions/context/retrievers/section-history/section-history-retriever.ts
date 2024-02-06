@@ -1,16 +1,15 @@
+import path from 'path'
+
 import { LRUCache } from 'lru-cache'
 import * as vscode from 'vscode'
-import type { URI } from 'vscode-uri'
+import { URI } from 'vscode-uri'
 
-import { isDefined } from '@sourcegraph/cody-shared'
+import { isDefined } from '@sourcegraph/cody-shared/src/common'
 
 import { locationKeyFn } from '../../../../graph/lsp/graph'
-import {
-    getGraphDocumentSections as defaultGetDocumentSections,
-    type DocumentSection,
-} from '../../../../graph/lsp/sections'
+import { getGraphDocumentSections as defaultGetDocumentSections, DocumentSection } from '../../../../graph/lsp/sections'
 import { getContextRange } from '../../../doc-context-getters'
-import type { ContextRetriever, ContextRetrieverOptions, ContextSnippet } from '../../../types'
+import { ContextRetriever, ContextRetrieverOptions, ContextSnippet } from '../../../types'
 import { createSubscriber } from '../../../utils'
 import { baseLanguageId } from '../../utils'
 
@@ -57,13 +56,9 @@ export class SectionHistoryRetriever implements ContextRetriever {
         workspace: Pick<typeof vscode.workspace, 'onDidChangeTextDocument'> = vscode.workspace,
         private getDocumentSections: typeof defaultGetDocumentSections = defaultGetDocumentSections
     ) {
-        this.disposables.push(
-            window.onDidChangeVisibleTextEditors(this.onDidChangeVisibleTextEditors.bind(this))
-        )
+        this.disposables.push(window.onDidChangeVisibleTextEditors(this.onDidChangeVisibleTextEditors.bind(this)))
         this.disposables.push(workspace.onDidChangeTextDocument(this.onDidChangeTextDocument.bind(this)))
-        this.disposables.push(
-            window.onDidChangeTextEditorSelection(this.onDidChangeTextEditorSelection.bind(this))
-        )
+        this.disposables.push(window.onDidChangeTextEditorSelection(this.onDidChangeTextEditorSelection.bind(this)))
         void this.onDidChangeVisibleTextEditors()
     }
 
@@ -76,15 +71,11 @@ export class SectionHistoryRetriever implements ContextRetriever {
         workspace?: Pick<typeof vscode.workspace, 'onDidChangeTextDocument'>,
         getDocumentSections?: typeof defaultGetDocumentSections
     ): SectionHistoryRetriever {
-        if (SectionHistoryRetriever.instance) {
+        if (this.instance) {
             throw new Error('SectionObserver has already been initialized')
         }
-        SectionHistoryRetriever.instance = new SectionHistoryRetriever(
-            window,
-            workspace,
-            getDocumentSections
-        )
-        return SectionHistoryRetriever.instance
+        this.instance = new SectionHistoryRetriever(window, workspace, getDocumentSections)
+        return this.instance
     }
 
     public async retrieve({
@@ -99,10 +90,7 @@ export class SectionHistoryRetriever implements ContextRetriever {
         const section = this.getSectionAtPosition(document, position)
         const contextRange = getContextRange(document, docContext)
 
-        function overlapsContextRange(
-            uri: vscode.Uri,
-            range?: { startLine: number; endLine: number }
-        ): boolean {
+        function overlapsContextRange(uri: vscode.Uri, range?: { startLine: number; endLine: number }): boolean {
             if (!contextRange || !range || uri.toString() !== document.uri.toString()) {
                 return false
             }
@@ -118,8 +106,7 @@ export class SectionHistoryRetriever implements ContextRetriever {
                     // Remove any sections that are not in the same language as the current document
                     .filter(
                         ([sectionDocument]) =>
-                            baseLanguageId(sectionDocument.languageId) ===
-                            baseLanguageId(document.languageId)
+                            baseLanguageId(sectionDocument.languageId) === baseLanguageId(document.languageId)
                     )
                     .map(([, section]) => section)
                     // Exclude the current section which should be included already as part of the
@@ -143,13 +130,9 @@ export class SectionHistoryRetriever implements ContextRetriever {
                         try {
                             const uri = section.location.uri
                             const textDocument = await vscode.workspace.openTextDocument(uri)
+                            const fileName = path.normalize(vscode.workspace.asRelativePath(uri.fsPath))
                             const content = textDocument.getText(section.location.range)
-                            return {
-                                uri,
-                                content,
-                                startLine: section.location.range.start.line,
-                                endLine: section.location.range.end.line,
-                            }
+                            return { fileName, content }
                         } catch (error) {
                             // Ignore errors opening the text file. This can happen when the file was deleted
                             console.error(error)
@@ -164,10 +147,7 @@ export class SectionHistoryRetriever implements ContextRetriever {
         return true
     }
 
-    private getSectionAtPosition(
-        document: vscode.TextDocument,
-        position: vscode.Position
-    ): Section | undefined {
+    private getSectionAtPosition(document: vscode.TextDocument, position: vscode.Position): Section | undefined {
         return this.activeDocuments
             .get(document.uri.toString())
             ?.sections.find(section => section.location.range.contains(position))
@@ -175,24 +155,21 @@ export class SectionHistoryRetriever implements ContextRetriever {
 
     /**
      * A pretty way to print the current state of all cached sections
+     *
+     * Printed paths are always in posix format (forwards slashes) even on windows
+     * for consistency.
      */
-    public debugPrint(
-        selectedDocument?: vscode.TextDocument,
-        selections?: readonly vscode.Selection[]
-    ): string {
+    public debugPrint(selectedDocument?: vscode.TextDocument, selections?: readonly vscode.Selection[]): string {
         const lines: string[] = []
-        // biome-ignore lint/complexity/noForEach: LRUCache#forEach has different typing than #entries, so just keeping it for now
         this.activeDocuments.forEach(document => {
-            lines.push(vscode.workspace.asRelativePath(document.uri))
+            lines.push(path.posix.normalize(vscode.workspace.asRelativePath(document.uri)))
             for (const section of document.sections) {
                 const isSelected =
                     selectedDocument?.uri.toString() === document.uri.toString() &&
                     selections?.some(selection => section.location.range.contains(selection))
                 const isLast = document.sections.at(-1) === section
 
-                lines.push(
-                    `  ${isLast ? '└' : '├'}${isSelected ? '*' : '─'} ${section.fuzzyName ?? 'unknown'}`
-                )
+                lines.push(`  ${isLast ? '└' : '├'}${isSelected ? '*' : '─'} ` + (section.fuzzyName ?? 'unknown'))
             }
         })
 
@@ -205,7 +182,7 @@ export class SectionHistoryRetriever implements ContextRetriever {
             for (let i = 0; i < lastSections.length; i++) {
                 const section = lastSections[i]
                 const isLast = i === lastSections.length - 1
-                const filePath = vscode.workspace.asRelativePath(section.location.uri)
+                const filePath = path.posix.normalize(vscode.workspace.asRelativePath(section.location.uri))
 
                 lines.push(`  ${isLast ? '└' : '├'} ${filePath} ${section.fuzzyName ?? 'unknown'}`)
             }
@@ -263,9 +240,7 @@ export class SectionHistoryRetriever implements ContextRetriever {
         }
         for (const newSection of sections) {
             const key = locationKeyFn(newSection.location)
-            const existingSection = existingDocument.sections.find(
-                section => locationKeyFn(section.location) === key
-            )
+            const existingSection = existingDocument.sections.find(section => locationKeyFn(section.location) === key)
             if (!existingSection) {
                 existingDocument.sections.push(newSection)
             }
@@ -296,9 +271,7 @@ export class SectionHistoryRetriever implements ContextRetriever {
         await Promise.all(promises)
     }
 
-    private getActiveDocumentAndSectionForLocation(
-        location: vscode.Location
-    ): [ActiveDocument, Section] | undefined {
+    private getActiveDocumentAndSectionForLocation(location: vscode.Location): [ActiveDocument, Section] | undefined {
         const uri = location.uri.toString()
         if (!this.activeDocuments.has(uri)) {
             return undefined
@@ -308,9 +281,7 @@ export class SectionHistoryRetriever implements ContextRetriever {
             return undefined
         }
         const locationKey = locationKeyFn(location)
-        const section = document.sections.find(
-            section => locationKeyFn(section.location) === locationKey
-        )
+        const section = document.sections.find(section => locationKeyFn(section.location) === locationKey)
         if (section) {
             return [document, section]
         }
@@ -328,8 +299,7 @@ export class SectionHistoryRetriever implements ContextRetriever {
         // We start by checking if the document has changed significantly since sections were last
         // loaded. If so, we reload the document which will mark all sections as dirty.
         const documentChangedSignificantly =
-            Math.abs(document.lastLines - event.document.lineCount) >=
-            NUM_OF_CHANGED_LINES_FOR_SECTION_RELOAD
+            Math.abs(document.lastLines - event.document.lineCount) >= NUM_OF_CHANGED_LINES_FOR_SECTION_RELOAD
         const sectionsOutdated = Date.now() - document.lastRevalidateAt > TEN_MINUTES
         if (documentChangedSignificantly || sectionsOutdated) {
             await this.loadDocument(event.document)
@@ -363,11 +333,7 @@ export class SectionHistoryRetriever implements ContextRetriever {
     }
 }
 
-function pushUniqueAndTruncate(
-    array: vscode.Location[],
-    item: vscode.Location,
-    truncate: number
-): vscode.Location[] {
+function pushUniqueAndTruncate(array: vscode.Location[], item: vscode.Location, truncate: number): vscode.Location[] {
     const indexOf = array.findIndex(i => locationKeyFn(i) === locationKeyFn(item))
     if (indexOf > -1) {
         // Remove the item so it is put to the front again

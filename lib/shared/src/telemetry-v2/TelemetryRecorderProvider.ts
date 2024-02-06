@@ -2,25 +2,19 @@ import {
     TelemetryRecorderProvider as BaseTelemetryRecorderProvider,
     defaultEventRecordingOptions,
     NoOpTelemetryExporter,
-    TimestampTelemetryProcessor,
-    type TelemetryEventInput,
-    type TelemetryProcessor,
-    TestTelemetryExporter,
+    TelemetryEventInput,
+    TelemetryProcessor,
 } from '@sourcegraph/telemetry'
 
-import {
-    CONTEXT_SELECTION_ID,
-    type Configuration,
-    type ConfigurationWithAccessToken,
-} from '../configuration'
+import { Configuration, ConfigurationWithAccessToken, CONTEXT_SELECTION_ID } from '../configuration'
 import { SourcegraphGraphQLAPIClient } from '../sourcegraph-api/graphql'
-import type { LogEventMode } from '../sourcegraph-api/graphql/client'
+import { LogEventMode } from '../sourcegraph-api/graphql/client'
 import { GraphQLTelemetryExporter } from '../sourcegraph-api/telemetry/GraphQLTelemetryExporter'
 import { MockServerTelemetryExporter } from '../sourcegraph-api/telemetry/MockServerTelemetryExporter'
 
-import type { BillingCategory, BillingProduct } from '.'
+import { BillingCategory, BillingProduct } from '.'
 
-interface ExtensionDetails {
+export interface ExtensionDetails {
     ide: 'VSCode' | 'JetBrains' | 'Neovim' | 'Emacs'
     ideExtensionType: 'Cody' | 'CodeSearch'
 
@@ -34,10 +28,7 @@ interface ExtensionDetails {
  *
  * This is NOT meant for use if connecting to an Agent.
  */
-export class TelemetryRecorderProvider extends BaseTelemetryRecorderProvider<
-    BillingProduct,
-    BillingCategory
-> {
+export class TelemetryRecorderProvider extends BaseTelemetryRecorderProvider<BillingProduct, BillingCategory> {
     constructor(
         extensionDetails: ExtensionDetails,
         config: ConfigurationWithAccessToken,
@@ -52,14 +43,8 @@ export class TelemetryRecorderProvider extends BaseTelemetryRecorderProvider<
                 }`,
                 clientVersion: extensionDetails.version,
             },
-            process.env.CODY_TELEMETRY_EXPORTER === 'testing'
-                ? new TestTelemetryExporter()
-                : new GraphQLTelemetryExporter(client, anonymousUserID, legacyBackcompatLogEventMode),
-            [
-                new ConfigurationMetadataProcessor(config),
-                // Generate timestamps when recording events, instead of serverside
-                new TimestampTelemetryProcessor(),
-            ],
+            new GraphQLTelemetryExporter(client, anonymousUserID, legacyBackcompatLogEventMode),
+            [new ConfigurationMetadataProcessor(config)],
             {
                 ...defaultEventRecordingOptions,
                 bufferTimeMs: 0, // disable buffering for now
@@ -77,16 +62,15 @@ export class TelemetryRecorderProvider extends BaseTelemetryRecorderProvider<
  */
 export type TelemetryRecorder = typeof noOpTelemetryRecorder
 
-export class NoOpTelemetryRecorderProvider extends BaseTelemetryRecorderProvider<
-    BillingProduct,
-    BillingCategory
-> {
+export class NoOpTelemetryRecorderProvider extends BaseTelemetryRecorderProvider<BillingProduct, BillingCategory> {
+    public readonly noOp = true
+
     constructor(processors?: TelemetryProcessor[]) {
         super({ client: '' }, new NoOpTelemetryExporter(), processors || [])
     }
 }
 
-const noOpTelemetryRecorder = new NoOpTelemetryRecorderProvider().getRecorder()
+export const noOpTelemetryRecorder = new NoOpTelemetryRecorderProvider().getRecorder()
 
 /**
  * MockServerTelemetryRecorderProvider uses MockServerTelemetryExporter to export
@@ -96,11 +80,7 @@ export class MockServerTelemetryRecorderProvider extends BaseTelemetryRecorderPr
     BillingProduct,
     BillingCategory
 > {
-    constructor(
-        extensionDetails: ExtensionDetails,
-        config: ConfigurationWithAccessToken,
-        anonymousUserID: string
-    ) {
+    constructor(extensionDetails: ExtensionDetails, config: ConfigurationWithAccessToken, anonymousUserID: string) {
         super(
             {
                 client: `${extensionDetails.ide}.${extensionDetails.ideExtensionType}`,
@@ -129,8 +109,24 @@ class ConfigurationMetadataProcessor implements TelemetryProcessor {
                 value: CONTEXT_SELECTION_ID[this.config.useContext],
             },
             {
+                key: 'chatPredictions',
+                value: this.config.experimentalChatPredictions ? 1 : 0,
+            },
+            {
+                key: 'inline',
+                value: this.config.inlineChat ? 1 : 0,
+            },
+            {
+                key: 'nonStop',
+                value: this.config.experimentalNonStop ? 1 : 0,
+            },
+            {
                 key: 'guardrails',
                 value: this.config.experimentalGuardrails ? 1 : 0,
+            },
+            {
+                key: 'newChatUI',
+                value: this.config.experimentalChatPanel ? 1 : 0,
             }
         )
     }

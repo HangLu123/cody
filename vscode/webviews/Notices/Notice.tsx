@@ -5,7 +5,7 @@ import classNames from 'classnames'
 
 import styles from './Notice.module.css'
 
-interface NoticeProps {
+export interface NoticeProps {
     icon: React.ReactNode
     title: React.ReactNode
     text?: React.ReactNode
@@ -33,9 +33,7 @@ export const Notice: React.FunctionComponent<React.PropsWithChildren<NoticeProps
     dismissKey,
     className,
 }) => {
-    const [dismissed, setDismissed] = useState<boolean>(
-        (dismissKey && hasBeenDismissed(dismissKey)) || false
-    )
+    const [dismissed, setDismissed] = useState<boolean>((dismissKey && hasBeenDismissed(dismissKey)) || false)
 
     const defaultOnDismiss = useCallback(() => {
         if (dismissKey) {

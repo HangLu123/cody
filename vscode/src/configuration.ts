@@ -1,19 +1,12 @@
 import * as vscode from 'vscode'
 
-import {
-    DOTCOM_URL,
-    type Configuration,
-    type ConfigurationUseContext,
-    type ConfigurationWithAccessToken,
-} from '@sourcegraph/cody-shared'
+import type {
+    Configuration,
+    ConfigurationWithAccessToken,
+} from '@sourcegraph/cody-shared/src/configuration'
+import { DOTCOM_URL } from '@sourcegraph/cody-shared/src/sourcegraph-api/environments'
 
-import {
-    CONFIG_KEY,
-    getConfigEnumValues,
-    type ConfigKeys,
-    type ConfigurationKeysMap,
-} from './configuration-keys'
-import { localStorage } from './services/LocalStorageProvider'
+import { CONFIG_KEY, ConfigKeys } from './configuration-keys'
 import { getAccessToken } from './services/SecretStorageProvider'
 
 interface ConfigGetter {
@@ -23,141 +16,105 @@ interface ConfigGetter {
 /**
  * All configuration values, with some sanitization performed.
  */
-export function getConfiguration(
-    config: ConfigGetter = vscode.workspace.getConfiguration()
-): Configuration {
+export function getConfiguration(config: ConfigGetter = vscode.workspace.getConfiguration()): Configuration {
     const isTesting = process.env.CODY_TESTING === 'true'
-
-    function getHiddenSetting<T>(configKey: string, defaultValue?: T): T {
-        return config.get<T>(`cody.${configKey}` as any, defaultValue)
-    }
 
     let debugRegex: RegExp | null = null
     try {
-        const debugPattern: string | null = config.get<string | null>(CONFIG_KEY.debugFilter, null)
+        const debugPattern: string | null = null
         if (debugPattern) {
             if (debugPattern === '*') {
-                debugRegex = /.*/
+                debugRegex = new RegExp('.*')
             } else {
                 debugRegex = new RegExp(debugPattern)
             }
         }
     } catch (error: any) {
-        void vscode.window.showErrorMessage(
-            "Error parsing cody.debug.filter regex - using default '*'",
-            error
-        )
-        debugRegex = /.*/
+        void vscode.window.showErrorMessage("Error parsing cody.debug.filter regex - using default '*'", error)
+        debugRegex = new RegExp('.*')
     }
 
-    let autocompleteAdvancedProvider: Configuration['autocompleteAdvancedProvider'] = config.get(
-        CONFIG_KEY.autocompleteAdvancedProvider,
+    let autocompleteExperimentalGraphContext: 'lsp-light' | 'bfg' | null = config.get(
+        CONFIG_KEY.autocompleteExperimentalGraphContext,
         null
     )
-    // Handle the old `unstable-fireworks` option
-    if (autocompleteAdvancedProvider === 'unstable-fireworks') {
-        autocompleteAdvancedProvider = 'fireworks'
+    // Handle the old `true` option
+    if (autocompleteExperimentalGraphContext === true) {
+        autocompleteExperimentalGraphContext = 'lsp-light'
     }
 
-    // check if the configured enum values are valid
-    const configKeys = [
-        'autocompleteAdvancedProvider',
-        'autocompleteAdvancedModel',
-    ] as (keyof ConfigurationKeysMap)[]
-
-    for (const configVal of configKeys) {
-        const key = configVal.replaceAll(/([A-Z])/g, '.$1').toLowerCase()
-        const value: string | null = config.get(CONFIG_KEY[configVal])
-        checkValidEnumValues(key, value)
-    }
-
-    const autocompleteExperimentalGraphContext: 'bfg' | null = getHiddenSetting(
-        'autocomplete.experimental.graphContext',
-        null
-    )
+    let autocompleteAdvancedProvider: Configuration['autocompleteAdvancedProvider'] = 'fireworks'
 
     return {
+        // NOTE: serverEndpoint is now stored in Local Storage instead but we will still keep supporting the one in confg
+        // to use as fallback for users who do not have access to local storage
+        serverEndpoint: sanitizeServerEndpoint(config.get(CONFIG_KEY.serverEndpoint, '')),
         proxy: config.get<string | null>(CONFIG_KEY.proxy, null),
-        codebase: sanitizeCodebase(config.get(CONFIG_KEY.codebase)),
+        codebase: sanitizeCodebase(''),
         customHeaders: config.get<object>(CONFIG_KEY.customHeaders, {}) as Record<string, string>,
-        useContext: config.get<ConfigurationUseContext>(CONFIG_KEY.useContext) || 'embeddings',
-        debugEnable: config.get<boolean>(CONFIG_KEY.debugEnable, false),
-        debugVerbose: config.get<boolean>(CONFIG_KEY.debugVerbose, false),
+        useContext:  'none',
+        debugEnable: false,
+        debugVerbose: false,
         debugFilter: debugRegex,
-        telemetryLevel: config.get<'all' | 'off'>(CONFIG_KEY.telemetryLevel, 'all'),
+        telemetryLevel: 'off',
         autocomplete: config.get(CONFIG_KEY.autocompleteEnabled, true),
         autocompleteLanguages: config.get(CONFIG_KEY.autocompleteLanguages, {
             '*': true,
+            scminput: false,
         }),
-        chatPreInstruction: config.get(CONFIG_KEY.chatPreInstruction, ''),
+        experimentalChatPanel: config.get(CONFIG_KEY.experimentalChatPanel, isTesting),
+        experimentalChatPredictions: config.get(CONFIG_KEY.experimentalChatPredictions, isTesting),
+        experimentalSearchPanel: false,
+        experimentalSimpleChatContext: config.get(CONFIG_KEY.experimentalSimpleChatContext, isTesting),
+        chatPreInstruction: config.get(CONFIG_KEY.chatPreInstruction),
+        experimentalGuardrails: false,
+        experimentalNonStop: config.get(CONFIG_KEY.experimentalNonStop, isTesting),
+        experimentalLocalSymbols: config.get(CONFIG_KEY.experimentalLocalSymbols, false),
         commandCodeLenses: config.get(CONFIG_KEY.commandCodeLenses, false),
         editorTitleCommandIcon: config.get(CONFIG_KEY.editorTitleCommandIcon, true),
         autocompleteAdvancedProvider,
-        autocompleteAdvancedModel: config.get<string | null>(CONFIG_KEY.autocompleteAdvancedModel, null),
+        autocompleteAdvancedServerEndpoint: config.get<string | null>(
+            'cody.llama.serverEndpoint',
+            null
+        ),
+        autocompleteAdvancedModel: null,
+        autocompleteAdvancedAccessToken: 'fake-token',
         autocompleteCompleteSuggestWidgetSelection: config.get(
             CONFIG_KEY.autocompleteCompleteSuggestWidgetSelection,
             true
         ),
-        autocompleteFormatOnAccept: config.get(CONFIG_KEY.autocompleteFormatOnAccept, true),
+        autocompleteExperimentalSyntacticPostProcessing: config.get(
+            CONFIG_KEY.autocompleteExperimentalSyntacticPostProcessing,
+            true
+        ),
+        autocompleteExperimentalGraphContext,
+        autocompleteExperimentalDynamicMultilineCompletions: config.get(
+            CONFIG_KEY.autocompleteExperimentalDynamicMultilineCompletions,
+            false
+        ),
+
+        // NOTE: Inline Chat will be deprecated soon - Do not enable inline-chat when experimental.chatPanel is enabled
+        inlineChat:
+            config.get(CONFIG_KEY.inlineChatEnabled, false) !== config.get(CONFIG_KEY.experimentalChatPanel, isTesting),
         codeActions: config.get(CONFIG_KEY.codeActionsEnabled, true),
-        commandHints: config.get(CONFIG_KEY.commandHintsEnabled, false),
 
         /**
-         * Hidden settings for internal use only.
+         * UNDOCUMENTED FLAGS
          */
-
-        internalUnstable: getHiddenSetting('internal.unstable', isTesting),
-
-        autocompleteExperimentalGraphContext,
-        experimentalSimpleChatContext: getHiddenSetting('experimental.simpleChatContext', true),
-        experimentalSymfContext: getHiddenSetting('experimental.symfContext', true),
-
-        experimentalGuardrails: getHiddenSetting('experimental.guardrails', isTesting),
-        experimentalTracing: getHiddenSetting('experimental.tracing', false),
-
-        autocompleteExperimentalDynamicMultilineCompletions: getHiddenSetting(
-            'autocomplete.experimental.dynamicMultilineCompletions',
-            false
-        ),
-        autocompleteExperimentalHotStreak: getHiddenSetting(
-            'autocomplete.experimental.hotStreak',
-            false
-        ),
-        autocompleteExperimentalFastPath: getHiddenSetting('autocomplete.experimental.fastPath', false),
-        autocompleteExperimentalOllamaOptions: getHiddenSetting(
-            'autocomplete.experimental.ollamaOptions',
-            {
-                url: 'http://localhost:11434',
-                model: 'codellama:7b-code',
-            }
-        ),
 
         // Note: In spirit, we try to minimize agent-specific code paths in the VSC extension.
         // We currently use this flag for the agent to provide more helpful error messages
         // when something goes wrong, and to suppress event logging in the agent.
         // Rely on this flag sparingly.
-        isRunningInsideAgent: getHiddenSetting('advanced.agent.running', false),
-        agentIDE: getHiddenSetting<'VSCode' | 'JetBrains' | 'Neovim' | 'Emacs'>('advanced.agent.ide'),
+        isRunningInsideAgent: config.get<boolean>('cody.advanced.agent.running' as any, false),
+        agentIDE: config.get<'VSCode' | 'JetBrains' | 'Neovim' | 'Emacs'>('cody.advanced.agent.ide' as any),
         autocompleteTimeouts: {
-            multiline: getHiddenSetting<number | undefined>(
-                'autocomplete.advanced.timeout.multiline',
-                undefined
-            ),
-            singleline: getHiddenSetting<number | undefined>(
-                'autocomplete.advanced.timeout.singleline',
+            multiline: config.get<number | undefined>('cody.autocomplete.advanced.timeout.multiline' as any, undefined),
+            singleline: config.get<number | undefined>(
+                'cody.autocomplete.advanced.timeout.singleline' as any,
                 undefined
             ),
         },
-
-        testingLocalEmbeddingsModel: isTesting
-            ? getHiddenSetting<string | undefined>('testing.localEmbeddings.model', undefined)
-            : undefined,
-        testingLocalEmbeddingsEndpoint: isTesting
-            ? getHiddenSetting<string | undefined>('testing.localEmbeddings.endpoint', undefined)
-            : undefined,
-        testingLocalEmbeddingsIndexLibraryPath: isTesting
-            ? getHiddenSetting<string | undefined>('testing.localEmbeddings.indexLibraryPath', undefined)
-            : undefined,
     }
 }
 
@@ -170,24 +127,38 @@ function sanitizeCodebase(codebase: string | undefined): string {
     return codebase.replace(protocolRegexp, '').trim().replace(trailingSlashRegexp, '')
 }
 
-export const getFullConfig = async (): Promise<ConfigurationWithAccessToken> => {
-    const config = getConfiguration()
-    const isTesting = process.env.CODY_TESTING === 'true'
-    const serverEndpoint =
-        localStorage?.getEndpoint() || (isTesting ? 'http://localhost:49300/' : DOTCOM_URL.href)
-    const accessToken = (await getAccessToken()) || null
-    return { ...config, accessToken, serverEndpoint }
+function sanitizeServerEndpoint(serverEndpoint: string): string {
+    if (!serverEndpoint) {
+        // TODO(philipp-spiess): Find out why the config is not loaded properly in the integration
+        // tests.
+        const isTesting = process.env.CODY_TESTING === 'true'
+        if (isTesting) {
+            return 'http://localhost:49300/'
+        }
+
+        return DOTCOM_URL.href
+    }
+    const trailingSlashRegexp = /\/$/
+    return serverEndpoint.trim().replace(trailingSlashRegexp, '')
 }
 
-function checkValidEnumValues(configName: string, value: string | null): void {
-    const validEnumValues = getConfigEnumValues(`cody.${configName}`)
-    if (value) {
-        if (!validEnumValues.includes(value)) {
-            void vscode.window.showErrorMessage(
-                `Invalid value for ${configName}: ${value}. Valid values are: ${validEnumValues.join(
-                    ', '
-                )}`
-            )
+export const getFullConfig = async (): Promise<ConfigurationWithAccessToken> => {
+    const config = getConfiguration()
+    console.log('config:', config)
+    // Migrate endpoints to local storage
+    config.serverEndpoint = "http://127.0.0.1:8080" // localStorage?.getEndpoint() || config.serverEndpoint
+    const accessToken = (await getAccessToken()) || null
+    return { ...config, accessToken }
+}
+/*
+    function checkValidEnumValues(configName: string, value: string | null): void {
+        const validEnumValues = getConfigEnumValues('cody.' + configName)
+        if (value) {
+            if (!validEnumValues.includes(value)) {
+                void vscode.window.showErrorMessage(
+                    `Invalid value for ${configName}: ${value}. Valid values are: ${validEnumValues.join(', ')}`
+                )
+            }
         }
     }
-}
+*/

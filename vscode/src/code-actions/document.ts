@@ -1,6 +1,7 @@
 import * as vscode from 'vscode'
 
-import type { ExecuteEditArguments } from '../edit/execute'
+import { FixupIntent } from '@sourcegraph/cody-shared/src/editor'
+
 import { execQueryWrapper } from '../tree-sitter/query-sdk'
 
 export class DocumentCodeAction implements vscode.CodeActionProvider {
@@ -20,9 +21,7 @@ export class DocumentCodeAction implements vscode.CodeActionProvider {
             document.lineAt(node.endPosition.row).range.end
         )
         const displayText =
-            name === 'documentableNode'
-                ? `Ask Cody to Document: ${node.text}`
-                : 'Ask Cody to Document This Export'
+            name === 'documentableNode' ? `Ask Cody to Document: ${node.text}` : 'Ask Cody to Document This Export'
 
         return [this.createCommandCodeAction(document, documentableRange, displayText)]
     }
@@ -40,10 +39,10 @@ export class DocumentCodeAction implements vscode.CodeActionProvider {
                 {
                     instruction: this.instruction,
                     range,
-                    intent: 'doc',
+                    intent: 'doc' satisfies FixupIntent,
                     document,
-                    mode: 'insert',
-                } satisfies ExecuteEditArguments,
+                    insertMode: true,
+                },
                 source,
             ],
             title: displayText,

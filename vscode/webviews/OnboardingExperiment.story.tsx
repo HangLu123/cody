@@ -1,13 +1,13 @@
-import type { Meta, StoryObj } from '@storybook/react'
+import { Meta, StoryObj } from '@storybook/react'
 
-import { NOOP_TELEMETRY_SERVICE } from '@sourcegraph/cody-shared'
+import { NOOP_TELEMETRY_SERVICE } from '@sourcegraph/cody-shared/src/telemetry'
 
 import { LoginSimplified } from './OnboardingExperiment'
 import { VSCodeStoryDecorator } from './storybook/VSCodeStoryDecorator'
-import type { VSCodeWrapper } from './utils/VSCodeApi'
+import { VSCodeWrapper } from './utils/VSCodeApi'
 
 const meta: Meta<typeof LoginSimplified> = {
-    title: 'cody/Onboarding',
+    title: 'cody/App-less Onboarding',
     component: LoginSimplified,
     decorators: [VSCodeStoryDecorator],
 }

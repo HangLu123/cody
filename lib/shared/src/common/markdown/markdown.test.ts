@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from 'vitest'
 
-import { registerHighlightContributions, renderMarkdown } from '.'
+import { escapeMarkdown, registerHighlightContributions, renderMarkdown } from '.'
 
 // TODO(sqs): copied from sourcegraph/sourcegraph. should dedupe.
 
@@ -43,26 +43,21 @@ const complicatedMarkdown = [
 ].join('\n')
 
 describe('renderMarkdown', () => {
-    // Skip test in Node.js v16
-    if (process.env.CODY_NODE_VERSION === '16') {
-        it('Skipping markdown test in Node.js v16 because there are flaky for some reason', () => {})
-        return
-    }
     it('renders code blocks, with syntax highlighting', () => {
         expect(renderMarkdown(complicatedMarkdown)).toMatchInlineSnapshot(`
-          "<h1 id="this-is-a-heading">This is a heading</h1>
-          <h2 id="this-is-a-subheading">This is a subheading</h2>
+          "<h1 id=\\"this-is-a-heading\\">This is a heading</h1>
+          <h2 id=\\"this-is-a-subheading\\">This is a subheading</h2>
           <p>Some text
           in the same paragraph
-          with a <a href="./destination">link</a>.</p>
-          <pre><code class="language-ts"><span class="hljs-keyword">const</span> someTypeScriptCode = funcCall()
+          with a <a href=\\"./destination\\">link</a>.</p>
+          <pre><code class=\\"language-ts\\"><span class=\\"hljs-keyword\\">const</span> someTypeScriptCode = funcCall()
           </code></pre>
           <ul>
           <li>bullet list item 1</li>
           <li>bullet list item 2</li>
           </ul>
           <ol>
-          <li>item 1<pre><code class="language-ts"><span class="hljs-keyword">const</span> codeInsideTheBulletPoint = <span class="hljs-string">"string"</span>
+          <li>item 1<pre><code class=\\"language-ts\\"><span class=\\"hljs-keyword\\">const</span> codeInsideTheBulletPoint = <span class=\\"hljs-string\\">\\"string\\"</span>
           </code></pre>
           </li>
           <li>item 2</li>
@@ -83,7 +78,7 @@ describe('renderMarkdown', () => {
           <td>B</td>
           </tr>
           </tbody></table>
-          <p><img alt="image alt text" src="./src.jpg"></p>
+          <p><img alt=\\"image alt text\\" src=\\"./src.jpg\\"></p>
           <p><b>inline html</b></p>
           <p>Escaped * markdown and escaped html code &amp;gt;</p>"
         `)
@@ -125,5 +120,44 @@ describe('renderMarkdown', () => {
     test('forbids data URI links', () => {
         const input = '<a href="data:text/plain,foobar" download>D</a>\n[D2](data:text/plain,foobar)'
         expect(renderMarkdown(input)).toBe('<p><a download="">D</a>\n<a>D2</a></p>')
+    })
+})
+
+describe('escapeMarkdown', () => {
+    it('handles complicated document', () => {
+        expect(escapeMarkdown(complicatedMarkdown)).toBe(`\
+\\# This is a heading
+
+\\#\\# This is a subheading
+
+Some text
+in the same paragraph
+with a \\[link\\]\\(\\.\\/destination\\)\\.
+
+\\\`\\\`\\\`ts
+const someTypeScriptCode \\= funcCall\\(\\)
+\\\`\\\`\\\`
+
+\\- bullet list item 1
+\\- bullet list item 2
+
+1\\. item 1
+  \\\`\\\`\\\`ts
+  const codeInsideTheBulletPoint \\= \\"string\\"
+  \\\`\\\`\\\`
+1\\. item 2
+
+&gt; quoted
+&gt; text
+
+\\| col 1 \\| col 2 \\|
+\\|\\-\\-\\-\\-\\-\\-\\-\\|\\-\\-\\-\\-\\-\\-\\-\\|
+\\| A     \\| B     \\|
+
+\\!\\[image alt text\\]\\(\\.\\/src\\.jpg\\)
+
+&lt;b&gt;inline html&lt;\\/b&gt;
+
+Escaped \\\\\\* markdown and escaped html code \\\\\\&gt\\\\\\;`)
     })
 })

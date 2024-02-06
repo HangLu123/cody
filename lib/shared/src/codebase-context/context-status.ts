@@ -1,5 +1,3 @@
-import type { URI } from 'vscode-uri'
-
 // This should remain compatible with vscode.Disposable.
 export interface Disposable {
     dispose(): void
@@ -14,45 +12,47 @@ export interface ContextStatusProvider {
 // Plain data types for describing context status. These are shared between
 // the VScode webviews, the VScode extension, and cody-shared.
 
-export type ContextProvider = LocalEmbeddingsProvider | SearchProvider
+export type ContextProvider = EmbeddingsProvider | GraphProvider | SearchProvider
 
-export interface RemoteSearchProvider {
-    kind: 'search'
+type EmbeddingsProvider = IndeterminateEmbeddingsProvider | LocalEmbeddingsProvider | RemoteEmbeddingsProvider
+
+interface IndeterminateEmbeddingsProvider {
+    kind: 'embeddings'
+    type: 'indeterminate'
+    state: 'indeterminate'
+}
+
+interface RemoteEmbeddingsProvider {
+    kind: 'embeddings'
     type: 'remote'
     state: 'ready' | 'no-match'
-    id: string
-    // If 'manual' the user picked this context source manually. If 'auto' the
-    // context source was included because the IDE detected the repo and
-    // included it.
-    inclusion: 'auto' | 'manual'
+    // The host name of the provider. This is displayed to the user *and*
+    // used to construct a URL to the settings page.
+    origin: string
+    // The name of the repository in the remote provider. For example the
+    // context group may be "~/projects/frobbler" but the remote name is
+    // "host.example/universal/frobbler".
+    remoteName: string
 }
 
 export interface LocalEmbeddingsProvider {
     kind: 'embeddings'
-    state: 'indeterminate' | 'no-match' | 'unconsented' | 'indexing' | 'ready'
-    errorReason?: 'not-a-git-repo' | 'git-repo-has-no-remote'
+    type: 'local'
+    state: 'unconsented' | 'indexing' | 'ready'
 }
 
-export type SearchProvider = LocalSearchProvider | RemoteSearchProvider
-
-export interface LocalSearchProvider {
+interface SearchProvider {
     kind: 'search'
-    type: 'local'
-    state: 'unindexed' | 'indexing' | 'ready' | 'failed'
+    state: 'indeterminate' | 'indexing' | 'ready'
+}
+
+interface GraphProvider {
+    kind: 'graph'
+    state: 'indeterminate' | 'indexing' | 'ready'
 }
 
 export interface ContextGroup {
-    /** The directory that this context group represents. */
-    dir?: URI
-
-    /**
-     * Usually `basename(dir)`.
-     *
-     * TODO(sqs): when old remote embeddings code is removed, remove this field and compute it as
-     * late as possible for presentation only.
-     */
-    displayName: string
-
+    name: string
     providers: ContextProvider[]
 }
 

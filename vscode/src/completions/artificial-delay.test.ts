@@ -29,16 +29,14 @@ describe('getArtificialDelay', () => {
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1000)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1000)
         // start at default, but gradually increasing latency after 5 rejected suggestions
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1050)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1100)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1150)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1200)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1250)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1300)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1350)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1400)
-        // max latency at 1400
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1400)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1600)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1800)
+        // max latency at 2000
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(2000)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(2000)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(2000)
         // after the suggestion was accepted, user latency resets to 0, using baseline only
         resetArtificialDelay()
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1000)
@@ -49,17 +47,14 @@ describe('getArtificialDelay', () => {
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1000)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1000)
         // gradually increasing latency after 5 rejected suggestions
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1050)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1100)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1150)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1200)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1250)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1300)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1350)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1400)
         // Latency will not reset before 5 minutes
         vi.advanceTimersByTime(3 * 60 * 1000)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1400)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1600)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1800)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(2000)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(2000)
         // Latency will be reset after 5 minutes
         vi.advanceTimersByTime(5 * 60 * 1000)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1000)
@@ -83,10 +78,9 @@ describe('getArtificialDelay', () => {
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(0)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(0)
         // gradually increasing latency after 5 rejected suggestions
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(50)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(100)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(150)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(200)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(400)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(600)
         // after the suggestion was accepted, user latency resets to 0, using baseline only
         resetArtificialDelay()
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(0)
@@ -112,7 +106,7 @@ describe('getArtificialDelay', () => {
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1000)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1000)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1000)
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1050)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1200)
         // Latency will be reset after 5 minutes
         vi.advanceTimersByTime(5 * 60 * 1000)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1000)
@@ -129,16 +123,22 @@ describe('getArtificialDelay', () => {
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(0)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(0)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(0)
-        // latency should start increasing after 5 rejections, but max at 1400
-        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(50)
+        // latency should start increasing after 5 rejections, but max at 2000
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(200)
         // line is a comment, so latency should be increased where:
         // base is 1000 due to line is a comment, and user latency is 400 as this is the 7th rejection
-        expect(getArtificialDelay(featureFlags, uri, languageId, 'comment')).toBe(1100)
-        for (let i = 150; i <= 1400; i += 50) {
-            expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(i)
-        }
-        // max at 1400 after multiple rejection
+        expect(getArtificialDelay(featureFlags, uri, languageId, 'comment')).toBe(1400)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(600)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(800)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1000)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1200)
         expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1400)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1600)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(1800)
+        // max at 2000 after multiple rejection
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(2000)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(2000)
+        expect(getArtificialDelay(featureFlags, uri, languageId)).toBe(2000)
 
         // reset latency on file change to default
         const newUri = 'foo/test.ts'
@@ -151,7 +151,7 @@ describe('getArtificialDelay', () => {
         expect(getArtificialDelay(featureFlags, newUri, languageId)).toBe(0)
         // Latency will not reset before 5 minutes
         vi.advanceTimersByTime(3 * 60 * 1000)
-        expect(getArtificialDelay(featureFlags, newUri, languageId)).toBe(50)
+        expect(getArtificialDelay(featureFlags, newUri, languageId)).toBe(200)
         // reset latency on accepted suggestion
         resetArtificialDelay()
         expect(getArtificialDelay(featureFlags, newUri, languageId)).toBe(0)

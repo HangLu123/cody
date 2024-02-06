@@ -1,5 +1,4 @@
 import * as vscode from 'vscode'
-import type { ExecuteChatArguments } from '../commands/execute/ask'
 
 export class ExplainCodeAction implements vscode.CodeActionProvider {
     public static readonly providedCodeActionKinds = [vscode.CodeActionKind.QuickFix]
@@ -25,13 +24,7 @@ export class ExplainCodeAction implements vscode.CodeActionProvider {
         const instruction = this.getCodeActionInstruction(diagnostics)
         action.command = {
             command: 'cody.action.chat',
-            arguments: [
-                {
-                    text: instruction,
-                    source: 'code-action:explain',
-                    submitType: 'user-newchat',
-                } satisfies ExecuteChatArguments,
-            ],
+            arguments: [instruction, 'code-action:explain'],
             title: 'Ask Cody to Explain',
         }
         action.diagnostics = diagnostics

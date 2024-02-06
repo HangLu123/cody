@@ -1,46 +1,31 @@
 import * as vscode from 'vscode'
 
-import {
-    displayPath,
-    tokensToChars,
-    type CodeCompletionsClient,
-    type CodeCompletionsParams,
-} from '@sourcegraph/cody-shared'
+import { tokensToChars } from '@sourcegraph/cody-shared/src/prompt/constants'
 
+import { CodeCompletionsClient, CodeCompletionsParams } from '../client'
 import {
     CLOSING_CODE_TAG,
-    MULTILINE_STOP_SEQUENCE,
-    OPENING_CODE_TAG,
     extractFromCodeBlock,
     fixBadCompletionStart,
     getHeadAndTail,
+    MULTILINE_STOP_SEQUENCE,
+    OPENING_CODE_TAG,
     trimLeadingWhitespaceUntilNewline,
 } from '../text-processing'
-import type { ContextSnippet } from '../types'
-import { forkSignal, generatorWithTimeout, zipGenerators } from '../utils'
+import { InlineCompletionItemWithAnalytics } from '../text-processing/process-inline-completions'
+import { ContextSnippet } from '../types'
 
-import type { FetchCompletionResult } from './fetch-and-process-completions'
+import { fetchAndProcessCompletions, fetchAndProcessDynamicMultilineCompletions } from './fetch-and-process-completions'
 import {
-    getCompletionParamsAndFetchImpl,
-    getLineNumberDependentCompletionParams,
-} from './get-completion-params'
-import {
+    CompletionProviderTracer,
     Provider,
+    ProviderConfig,
+    ProviderOptions,
     standardContextSizeHints,
-    type CompletionProviderTracer,
-    type ProviderConfig,
-    type ProviderOptions,
 } from './provider'
-
-const MAX_RESPONSE_TOKENS = 256
 
 const MULTI_LINE_STOP_SEQUENCES = [CLOSING_CODE_TAG]
 const SINGLE_LINE_STOP_SEQUENCES = [CLOSING_CODE_TAG, MULTILINE_STOP_SEQUENCE]
-
-const lineNumberDependentCompletionParams = getLineNumberDependentCompletionParams({
-    singlelineStopSequences: SINGLE_LINE_STOP_SEQUENCES,
-    multilineStopSequences: MULTI_LINE_STOP_SEQUENCES,
-})
 
 interface UnstableOpenAIOptions {
     maxContextTokens?: number
@@ -48,17 +33,23 @@ interface UnstableOpenAIOptions {
 }
 
 const PROVIDER_IDENTIFIER = 'unstable-openai'
+const MAX_RESPONSE_TOKENS = 256
 
-class UnstableOpenAIProvider extends Provider {
+const DYNAMIC_MULTLILINE_COMPLETIONS_ARGS: Pick<
+    CodeCompletionsParams,
+    'maxTokensToSample' | 'stopSequences' | 'timeoutMs'
+> = {
+    maxTokensToSample: MAX_RESPONSE_TOKENS,
+    stopSequences: MULTI_LINE_STOP_SEQUENCES,
+    timeoutMs: 15_000,
+}
+
+export class UnstableOpenAIProvider extends Provider {
     private client: Pick<CodeCompletionsClient, 'complete'>
     private promptChars: number
-    private instructions =
-        `You are a code completion AI designed to take the surrounding code and shared context into account in order to predict and suggest high-quality code to complete the code enclosed in ${OPENING_CODE_TAG} tags.  You only respond with code that works and fits seamlessly with surrounding code. Do not include anything else beyond the code.`
+    private instructions = `You are a code completion AI designed to take the surrounding code and shared context into account in order to predict and suggest high-quality code to complete the code enclosed in ${OPENING_CODE_TAG} tags.  You only respond with code that works and fits seamlessly with surrounding code. Do not include anything else beyond the code.`
 
-    constructor(
-        options: ProviderOptions,
-        { maxContextTokens, client }: Required<UnstableOpenAIOptions>
-    ) {
+    constructor(options: ProviderOptions, { maxContextTokens, client }: Required<UnstableOpenAIOptions>) {
         super(options)
         this.promptChars = tokensToChars(maxContextTokens - MAX_RESPONSE_TOKENS)
         this.client = client
@@ -103,9 +94,7 @@ ${OPENING_CODE_TAG}${infillBlock}`
             const snippetMessages: string[] = [
                 'symbol' in snippet && snippet.symbol !== ''
                     ? `Additional documentation for \`${snippet.symbol}\`: ${OPENING_CODE_TAG}${snippet.content}${CLOSING_CODE_TAG}`
-                    : `Codebase context from file path '${displayPath(
-                          snippet.uri
-                      )}': ${OPENING_CODE_TAG}${snippet.content}${CLOSING_CODE_TAG}`,
+                    : `Codebase context from file path '${snippet.fileName}': ${OPENING_CODE_TAG}${snippet.content}${CLOSING_CODE_TAG}`,
             ]
             const numSnippetChars = snippetMessages.join('\n\n').length + 1
             if (numSnippetChars > remainingChars) {
@@ -119,46 +108,48 @@ ${OPENING_CODE_TAG}${infillBlock}`
         return messages.join('\n\n')
     }
 
-    public generateCompletions(
+    public async generateCompletions(
         abortSignal: AbortSignal,
         snippets: ContextSnippet[],
         tracer?: CompletionProviderTracer
-    ): AsyncGenerator<FetchCompletionResult[]> {
-        const { partialRequestParams, fetchAndProcessCompletionsImpl } = getCompletionParamsAndFetchImpl(
-            {
-                providerOptions: this.options,
-                lineNumberDependentCompletionParams,
-            }
-        )
+    ): Promise<InlineCompletionItemWithAnalytics[]> {
+        const prompt = this.createPrompt(snippets)
+        const { dynamicMultlilineCompletions, multiline } = this.options
 
         const requestParams: CodeCompletionsParams = {
-            ...partialRequestParams,
-            messages: [{ speaker: 'human', text: this.createPrompt(snippets) }],
+            messages: [{ speaker: 'human', text: prompt }],
+            maxTokensToSample: multiline ? MAX_RESPONSE_TOKENS : 50,
+            temperature: 1,
             topP: 0.5,
+            stopSequences: multiline ? MULTI_LINE_STOP_SEQUENCES : SINGLE_LINE_STOP_SEQUENCES,
+            timeoutMs: multiline ? 15000 : 5000,
+        }
+
+        let fetchAndProcessCompletionsImpl = fetchAndProcessCompletions
+        if (dynamicMultlilineCompletions) {
+            // If the feature flag is enabled use params adjusted for the experiment.
+            Object.assign(requestParams, DYNAMIC_MULTLILINE_COMPLETIONS_ARGS)
+
+            // Use an alternative fetch completions implementation.
+            fetchAndProcessCompletionsImpl = fetchAndProcessDynamicMultilineCompletions
         }
 
         tracer?.params(requestParams)
 
-        const completionsGenerators = Array.from({
-            length: this.options.n,
-        }).map(() => {
-            const abortController = forkSignal(abortSignal)
-
-            const completionResponseGenerator = generatorWithTimeout(
-                this.client.complete(requestParams, abortController),
-                requestParams.timeoutMs,
-                abortController
-            )
-
-            return fetchAndProcessCompletionsImpl({
-                completionResponseGenerator,
-                abortController,
-                providerSpecificPostProcess: this.postProcess,
-                providerOptions: this.options,
+        const completions = await Promise.all(
+            Array.from({ length: this.options.n }).map(() => {
+                return fetchAndProcessCompletionsImpl({
+                    client: this.client,
+                    requestParams,
+                    abortSignal,
+                    providerSpecificPostProcess: this.postProcess,
+                    providerOptions: this.options,
+                })
             })
-        })
+        )
 
-        return zipGenerators(completionsGenerators)
+        tracer?.result({ completions })
+        return completions
     }
 
     private postProcess = (rawResponse: string): string => {
@@ -189,16 +180,7 @@ export function createProviderConfig({
 }: UnstableOpenAIOptions & { model?: string }): ProviderConfig {
     return {
         create(options: ProviderOptions) {
-            return new UnstableOpenAIProvider(
-                {
-                    ...options,
-                    id: PROVIDER_IDENTIFIER,
-                },
-                {
-                    maxContextTokens,
-                    ...otherOptions,
-                }
-            )
+            return new UnstableOpenAIProvider(options, { maxContextTokens, ...otherOptions })
         },
         contextSizeHints: standardContextSizeHints(maxContextTokens),
         identifier: PROVIDER_IDENTIFIER,

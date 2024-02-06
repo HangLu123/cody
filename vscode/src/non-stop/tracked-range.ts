@@ -29,8 +29,7 @@ export interface UpdateRangeOptions {
 export function updateRangeMultipleChanges(
     range: vscode.Range,
     changes: TextChange[],
-    options: UpdateRangeOptions = {},
-    rangeUpdater = updateRange
+    options: UpdateRangeOptions = {}
 ): vscode.Range {
     changes.sort((a, b) => (b.range.start.isBefore(a.range.start) ? -1 : 1))
     for (let i = 0; i < changes.length - 1; i++) {
@@ -40,7 +39,7 @@ export function updateRangeMultipleChanges(
         )
     }
     for (const change of changes) {
-        range = rangeUpdater(range, change, options)
+        range = updateRange(range, change, options)
     }
     return range
 }
@@ -48,11 +47,7 @@ export function updateRangeMultipleChanges(
 // Given a range and an edit, updates the range for the edit. Edits at the
 // start or end of the range shrink the range. If the range is deleted, return a
 // zero-width range at the start of the edit.
-export function updateRange(
-    range: vscode.Range,
-    change: TextChange,
-    options: UpdateRangeOptions = {}
-): vscode.Range {
+export function updateRange(range: vscode.Range, change: TextChange, options: UpdateRangeOptions = {}): vscode.Range {
     const lines = change.text.split(/\r\n|\r|\n/m)
     const insertedLastLine = lines.at(-1)?.length
     if (insertedLastLine === undefined) {
@@ -61,12 +56,8 @@ export function updateRange(
     const insertedLineBreaks = lines.length - 1
 
     // Handle edits
-    // support combining non-whitespace appended changes with the original range
-    if (
-        options.supportRangeAffix &&
-        change.range.start.isEqual(range.end) &&
-        change.text.trim().length > 0
-    ) {
+    // support combining the appended change with the original range
+    if (options.supportRangeAffix && change.range.start.isEqual(range.end)) {
         return new vscode.Range(
             range.start,
             change.range.end.translate(
@@ -77,12 +68,8 @@ export function updateRange(
             )
         )
     }
-    // support combining non-whitespace prepended changes with the original range
-    if (
-        options.supportRangeAffix &&
-        change.range.end.isEqual(range.start) &&
-        change.text.trim().length > 0
-    ) {
+    // support combining the prepended change with the original range
+    if (options.supportRangeAffix && change.range.end.isEqual(range.start)) {
         return new vscode.Range(
             change.range.start,
             range.end.translate(
@@ -122,17 +109,11 @@ export function updateRange(
         )
     }
     // ...around
-    else if (
-        change.range.start.isBeforeOrEqual(range.start) &&
-        change.range.end.isAfterOrEqual(range.end)
-    ) {
+    else if (change.range.start.isBeforeOrEqual(range.start) && change.range.end.isAfterOrEqual(range.end)) {
         return new vscode.Range(change.range.start, change.range.start)
     }
     // ...within
-    else if (
-        change.range.start.isAfterOrEqual(range.start) &&
-        change.range.end.isBeforeOrEqual(range.end)
-    ) {
+    else if (change.range.start.isAfterOrEqual(range.start) && change.range.end.isBeforeOrEqual(range.end)) {
         range = range.with(
             range.start,
             range.end.translate(
@@ -168,44 +149,5 @@ export function updateRange(
             change.range.start
         )
     }
-    return range
-}
-
-/**
- * Given a range and an edit, shifts the range for the edit.
- * Only handles edits that are outside of the range, as it is purely focused on shifting a fixed range in a document.
- * Does not expand or shrink the original rank.
- */
-export function updateFixedRange(range: vscode.Range, change: TextChange): vscode.Range {
-    const lines = change.text.split(/\r\n|\r|\n/m)
-    const insertedLastLine = lines.at(-1)?.length
-    if (insertedLastLine === undefined) {
-        throw new TypeError('unreachable') // Any string .split produces a non-empty array.
-    }
-    const insertedLineBreaks = lines.length - 1
-
-    // The only case where a range should be shifted is when the change happens before the range.
-    // In this case, we just need to adjust the start and end position depending on if the incoming change added or removed text.
-    if (change.range.end.isBefore(range.start)) {
-        range = range.with(
-            range.start.translate(
-                change.range.start.line - change.range.end.line + insertedLineBreaks,
-                change.range.end.line === range.start.line
-                    ? insertedLastLine +
-                          -change.range.end.character +
-                          (insertedLineBreaks === 0 ? change.range.start.character : 0)
-                    : 0
-            ),
-            range.end.translate(
-                change.range.start.line - change.range.end.line + insertedLineBreaks,
-                change.range.end.line === range.end.line
-                    ? insertedLastLine -
-                          change.range.end.character +
-                          (insertedLineBreaks === 0 ? change.range.start.character : 0)
-                    : 0
-            )
-        )
-    }
-
     return range
 }

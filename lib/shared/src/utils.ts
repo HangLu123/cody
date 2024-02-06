@@ -1,5 +1,3 @@
-import { logError } from './logger'
-
 export const isError = (value: unknown): value is Error => value instanceof Error
 
 // Converts a git clone URL to the codebase name that includes the slash-separated code host, owner, and repository name
@@ -7,16 +5,14 @@ export const isError = (value: unknown): value is Error => value instanceof Erro
 // - "github:sourcegraph/sourcegraph" a common SSH host alias
 // - "https://github.com/sourcegraph/deploy-sourcegraph-k8s.git"
 // - "git@github.com:sourcegraph/sourcegraph.git"
-// - "https://dev.azure.com/organization/project/_git/repository"
-
 export function convertGitCloneURLToCodebaseName(cloneURL: string): string | null {
     const result = convertGitCloneURLToCodebaseNameOrError(cloneURL)
     if (isError(result)) {
         if (result.message) {
             if (result.cause) {
-                logError('convertGitCloneURLToCodebaseName', result.message, result.cause)
+                console.error(result.message, result.cause)
             } else {
-                logError('convertGitCloneURLToCodebaseName', result.message)
+                console.error(result.message)
             }
         }
         return null
@@ -26,24 +22,18 @@ export function convertGitCloneURLToCodebaseName(cloneURL: string): string | nul
 
 export function convertGitCloneURLToCodebaseNameOrError(cloneURL: string): string | Error {
     if (!cloneURL) {
-        return new Error(
-            `Unable to determine the git clone URL for this workspace.\ngit output: ${cloneURL}`
-        )
+        return new Error(`Unable to determine the git clone URL for this workspace.\ngit output: ${cloneURL}`)
     }
     try {
         // Handle common Git SSH URL format
-        const match = cloneURL.match(/^[\w-]+@([^:]+):([\w-]+)\/([\w-\.]+)$/)
+        const match = cloneURL.match(/^[\w-]+@([^:]+):([\w-]+)\/([\w-]+)(\.git)?$/)
         if (match) {
             const host = match[1]
             const owner = match[2]
-            const repo = match[3].replace(/\.git$/, '')
+            const repo = match[3]
             return `${host}/${owner}/${repo}`
         }
         const uri = new URL(cloneURL)
-        // Handle Azure DevOps URLs
-        if (uri.hostname?.includes('dev.azure') && uri.pathname) {
-            return `${uri.hostname}${uri.pathname.replace('/_git', '')}`
-        }
         // Handle GitHub URLs
         if (uri.protocol.startsWith('github') || uri.href.startsWith('github')) {
             return `github.com/${uri.pathname.replace('.git', '')}`
@@ -62,8 +52,6 @@ export function convertGitCloneURLToCodebaseNameOrError(cloneURL: string): strin
         }
         return new Error('')
     } catch (error) {
-        return new Error(`Cody could not extract repo name from clone URL ${cloneURL}:`, {
-            cause: error,
-        })
+        return new Error(`Cody could not extract repo name from clone URL ${cloneURL}:`, { cause: error })
     }
 }

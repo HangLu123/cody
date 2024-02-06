@@ -1,8 +1,10 @@
-import { defineProjectWithDefaults } from '../.config/viteShared'
+/// <reference types="vitest" />
 
-export default defineProjectWithDefaults(__dirname, {
+import { defineConfig } from 'vite'
+
+export default defineConfig({
     test: {
-        include: ['{src,webviews}/**/*.test.ts?(x)'],
-        setupFiles: ['src/testutils/vscode.ts', 'src/testutils/testSetup.ts'],
+        include: ['src/**/*.test.ts?(x)'],
+        setupFiles: ['src/testutils/vscode.ts'],
     },
 })

@@ -1,14 +1,15 @@
 import { VSCodeButton } from '@vscode/webview-ui-toolkit/react'
+import classNames from 'classnames'
 
-import type { TelemetryService } from '@sourcegraph/cody-shared'
+import { TelemetryService } from '@sourcegraph/cody-shared/src/telemetry'
 
-import type { AuthMethod } from '../src/chat/protocol'
+import { AuthMethod } from '../src/chat/protocol'
 
 import onboardingSplashImage from './cody-onboarding-splash.svg'
 import signInLogoGitHub from './sign-in-logo-github.svg'
 import signInLogoGitLab from './sign-in-logo-gitlab.svg'
 import signInLogoGoogle from './sign-in-logo-google.svg'
-import type { VSCodeWrapper } from './utils/VSCodeApi'
+import { VSCodeWrapper } from './utils/VSCodeApi'
 
 import styles from './OnboardingExperiment.module.css'
 
@@ -29,7 +30,7 @@ const WebLogin: React.FunctionComponent<
         <ol>
             <li>
                 <a href="https://sourcegraph.com/sign-up" target="site">
-                    Sign Up at Sourcegraph.com
+                    Sign up at sourcegraph.com
                 </a>
             </li>
             <li>
@@ -38,7 +39,6 @@ const WebLogin: React.FunctionComponent<
                 </a>
             </li>
             <li>
-                {/* biome-ignore lint/a11y/useValidAnchor: can fix with a lot of CSS but not a priority */}
                 <a
                     href="about:blank"
                     onClick={event => {
@@ -51,7 +51,7 @@ const WebLogin: React.FunctionComponent<
                         event.stopPropagation()
                     }}
                 >
-                    Add the Access Token to VS Code
+                    Add the Access Token to VScode
                 </a>
             </li>
         </ol>
@@ -73,8 +73,8 @@ export const LoginSimplified: React.FunctionComponent<React.PropsWithoutRef<Logi
         <div className={styles.container}>
             <div className={styles.sectionsContainer}>
                 <img src={onboardingSplashImage} alt="Hi, I'm Cody" className={styles.logo} />
-                <div className={styles.section}>
-                    <h1>Cody Free or Cody Pro</h1>
+                <div className={classNames(styles.section, styles.authMethodScreen)}>
+                    <h1>Sign In to Get Started</h1>
                     <div className={styles.buttonWidthSizer}>
                         <div className={styles.buttonStack}>
                             {uiKindIsWeb ? (
@@ -85,9 +85,7 @@ export const LoginSimplified: React.FunctionComponent<React.PropsWithoutRef<Logi
                                         className={styles.button}
                                         type="button"
                                         onClick={() => {
-                                            telemetryService.log(
-                                                'CodyVSCodeExtension:auth:simplifiedSignInGitHubClick'
-                                            )
+                                            telemetryService.log('CodyVSCodeExtension:auth:simplifiedSignInGitHubClick')
                                             simplifiedLoginRedirect('github')
                                         }}
                                     >
@@ -98,9 +96,7 @@ export const LoginSimplified: React.FunctionComponent<React.PropsWithoutRef<Logi
                                         className={styles.button}
                                         type="button"
                                         onClick={() => {
-                                            telemetryService.log(
-                                                'CodyVSCodeExtension:auth:simplifiedSignInGitLabClick'
-                                            )
+                                            telemetryService.log('CodyVSCodeExtension:auth:simplifiedSignInGitLabClick')
                                             simplifiedLoginRedirect('gitlab')
                                         }}
                                     >
@@ -111,9 +107,7 @@ export const LoginSimplified: React.FunctionComponent<React.PropsWithoutRef<Logi
                                         className={styles.button}
                                         type="button"
                                         onClick={() => {
-                                            telemetryService.log(
-                                                'CodyVSCodeExtension:auth:simplifiedSignInGoogleClick'
-                                            )
+                                            telemetryService.log('CodyVSCodeExtension:auth:simplifiedSignInGoogleClick')
                                             simplifiedLoginRedirect('google')
                                         }}
                                     >
@@ -125,22 +119,12 @@ export const LoginSimplified: React.FunctionComponent<React.PropsWithoutRef<Logi
                         </div>
                     </div>
                 </div>
-                <div className={styles.section}>
-                    <h1>Cody Enterprise</h1>
-                    <div className={styles.buttonWidthSizer}>
-                        <div className={styles.buttonStack}>
-                            <VSCodeButton
-                                className={styles.button}
-                                type="button"
-                                onClick={otherSignInClick}
-                            >
-                                Sign In to Your Enterprise&nbsp;Instance
-                            </VSCodeButton>
-                        </div>
-                    </div>
+                <div className={styles.otherSignInOptions}>
+                    <h2>Using Sourcegraph Enterprise?</h2>
                     <p>
-                        Learn more about{' '}
-                        <a href="https://sourcegraph.com/cloud">Sourcegraph Enterprise</a>
+                        <button type="button" className={styles.linkButton} onClick={otherSignInClick}>
+                            Sign In to Your Enterprise Instance
+                        </button>
                     </p>
                 </div>
             </div>

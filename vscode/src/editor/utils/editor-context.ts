@@ -1,39 +1,22 @@
-import path from 'path'
+import { basename, dirname } from 'path'
 
 import fuzzysort from 'fuzzysort'
-import throttle from 'lodash/throttle'
+import { throttle } from 'lodash'
 import * as vscode from 'vscode'
 
-import {
-    displayPath,
-    isCodyIgnoredFile,
-    isWindows,
-    type ContextFile,
-    type ContextFileFile,
-    type ContextFileSource,
-    type ContextFileSymbol,
-    type ContextFileType,
-    type SymbolKind,
-} from '@sourcegraph/cody-shared'
+import { ContextFile } from '@sourcegraph/cody-shared'
+import { ContextFileSource, ContextFileType, SymbolKind } from '@sourcegraph/cody-shared/src/codebase-context/messages'
 
 import { getOpenTabsUris, getWorkspaceSymbols } from '.'
 
-const findWorkspaceFiles = async (
-    cancellationToken: vscode.CancellationToken
-): Promise<vscode.Uri[]> => {
+const findWorkspaceFiles = async (cancellationToken: vscode.CancellationToken): Promise<vscode.Uri[]> => {
     // TODO(toolmantim): Add support for the search.exclude option, e.g.
     // Object.keys(vscode.workspace.getConfiguration().get('search.exclude',
     // {}))
-    const fileExcludesPattern =
-        '**/{*.env,.git,.class,out/,dist/,build/,snap,node_modules,__pycache__}**'
+    const fileExcludesPattern = '**/{.,*.env,.git,out/,dist/,bin/,snap,node_modules,__pycache__}**'
     // TODO(toolmantim): Check this performs with remote workspaces (do we need a UI spinner etc?)
     return vscode.workspace.findFiles('', fileExcludesPattern, undefined, cancellationToken)
 }
-
-// Some matches we don't want to ignore because they might be valid code (for example `bin/` in Dart)
-// but could also be junk (`bin/` in .NET). If a file path contains a segment matching any of these
-// items it will be ranked low unless the users query contains the exact segment.
-const lowScoringPathSegments = ['bin']
 
 // This is expensive for large repos (e.g. Chromium), so we only do it max once
 // every 10 seconds. It also handily supports a cancellation callback to use
@@ -49,7 +32,7 @@ export async function getFileContextFiles(
     query: string,
     maxResults: number,
     token: vscode.CancellationToken
-): Promise<ContextFileFile[]> {
+): Promise<ContextFile[]> {
     if (!query.trim()) {
         return []
     }
@@ -63,17 +46,8 @@ export async function getFileContextFiles(
         return []
     }
 
-    if (isWindows()) {
-        // On Windows, if the user has typed forward slashes, map them to backslashes before
-        // running the search so they match the real paths.
-        query = query.replaceAll('/', '\\')
-    }
-
-    // Add on the relative URIs for search, so we only search the visible part
-    // of the path and not the full FS path.
-    const urisWithRelative = uris.map(uri => ({ uri, relative: displayPath(uri) }))
-    const results = fuzzysort.go(query, urisWithRelative, {
-        key: 'relative',
+    const results = fuzzysort.go(query, uris, {
+        key: 'fsPath',
         limit: maxResults,
         // We add a threshold for performance as per fuzzysort’s
         // recommendations. Testing with sg/sg path strings, somewhere over 10k
@@ -85,39 +59,19 @@ export async function getFileContextFiles(
         threshold: -100000,
     })
 
-    // Remove ignored files and apply a penalty for segments that are in the low scoring list.
-    const adjustedResults = [...results].map(result => {
-        const segments = result.obj.uri.fsPath.split(path.sep)
-        for (const lowScoringPathSegment of lowScoringPathSegments) {
-            if (segments.includes(lowScoringPathSegment) && !query.includes(lowScoringPathSegment)) {
-                return {
-                    ...result,
-                    score: result.score - 100000,
-                }
-            }
-        }
-        return result
-    })
-
     // fuzzysort can return results in different order for the same query if
     // they have the same score :( So we do this hacky post-limit sorting (first
-    // by score, then by path) to ensure the order stays the same.
-    const sortedResults = adjustedResults.sort((a, b) => {
-        return (
-            b.score - a.score ||
-            new Intl.Collator(undefined, { numeric: true }).compare(a.obj.uri.fsPath, b.obj.uri.fsPath)
-        )
+    // by score, then by path) to ensure the order stays the same
+    const sortedResults = [...results].sort((a, b) => {
+        return b.score - a.score || new Intl.Collator(undefined, { numeric: true }).compare(a.obj.fsPath, b.obj.fsPath)
     })
 
     // TODO(toolmantim): Add fuzzysort.highlight data to the result so we can show it in the UI
 
-    return sortedResults.flatMap(result => createContextFileFromUri(result.obj.uri, 'user', 'file'))
+    return sortedResults.map(result => createContextFileFromUri(result.obj))
 }
 
-export async function getSymbolContextFiles(
-    query: string,
-    maxResults = 20
-): Promise<ContextFileSymbol[]> {
+export async function getSymbolContextFiles(query: string, maxResults = 20): Promise<ContextFile[]> {
     if (!query.trim()) {
         return []
     }
@@ -154,19 +108,21 @@ export async function getSymbolContextFiles(
 
     const matches = []
     for (const symbol of symbols) {
-        const contextFile = createContextFileFromUri(
+        // TODO(toolmantim): Update the kinds to match above
+        const kind: SymbolKind = symbol.kind === vscode.SymbolKind.Class ? 'class' : 'function'
+        const source: ContextFileSource = 'user'
+        const contextFile: ContextFile = createContextFileFromUri(
             symbol.location.uri,
-            'user',
+            source,
             'symbol',
             symbol.location.range,
-            // TODO(toolmantim): Update the kinds to match above
-            symbol.kind === vscode.SymbolKind.Class ? 'class' : 'function',
-            symbol.name
+            kind
         )
+        contextFile.fileName = symbol.name
         matches.push(contextFile)
     }
 
-    return matches.flatMap(match => match)
+    return matches
 }
 
 export function getOpenTabsContextFile(): ContextFile[] {
@@ -174,62 +130,32 @@ export function getOpenTabsContextFile(): ContextFile[] {
     const fsPaths = new Set()
     return getOpenTabsUris()
         .filter(uri => {
-            if (isCodyIgnoredFile(uri)) {
-                return false
-            }
-            if (!fsPaths.has(uri.path)) {
-                fsPaths.add(uri.path)
+            if (!fsPaths.has(uri.fsPath)) {
+                fsPaths.add(uri.fsPath)
                 return true
             }
             return false
         })
-        .flatMap(uri => createContextFileFromUri(uri, 'user', 'file'))
+        .map(uri => createContextFileFromUri(uri, 'user', 'file', undefined, undefined))
 }
 
 function createContextFileFromUri(
     uri: vscode.Uri,
-    source: ContextFileSource,
-    type: 'symbol',
-    selectionRange: vscode.Range,
-    kind: SymbolKind,
-    symbolName: string
-): ContextFileSymbol[]
-function createContextFileFromUri(
-    uri: vscode.Uri,
-    source: ContextFileSource,
-    type: 'file',
-    selectionRange?: vscode.Range
-): ContextFileFile[]
-function createContextFileFromUri(
-    uri: vscode.Uri,
-    source: ContextFileSource,
-    type: ContextFileType,
+    source: ContextFileSource = 'user',
+    type: ContextFileType = 'file',
     selectionRange?: vscode.Range,
-    kind?: SymbolKind,
-    symbolName?: string
-): ContextFile[] {
-    if (isCodyIgnoredFile(uri)) {
-        return []
-    }
-
+    kind?: SymbolKind
+): ContextFile {
     const range = selectionRange ? createContextFileRange(selectionRange) : selectionRange
-    return [
-        type === 'file'
-            ? {
-                  type,
-                  uri,
-                  range,
-                  source,
-              }
-            : {
-                  type,
-                  symbolName: symbolName!,
-                  uri,
-                  range,
-                  source,
-                  kind: kind!,
-              },
-    ]
+    return {
+        fileName: vscode.workspace.asRelativePath(uri.fsPath),
+        uri,
+        path: createContextFilePath(uri),
+        range,
+        type,
+        source,
+        kind,
+    }
 }
 
 function createContextFileRange(selectionRange: vscode.Range): ContextFile['range'] {
@@ -242,5 +168,13 @@ function createContextFileRange(selectionRange: vscode.Range): ContextFile['rang
             line: selectionRange.end.line,
             character: selectionRange.end.character,
         },
+    }
+}
+
+function createContextFilePath(uri: vscode.Uri): ContextFile['path'] {
+    return {
+        basename: basename(uri.fsPath),
+        dirname: dirname(uri.fsPath),
+        relative: vscode.workspace.asRelativePath(uri.fsPath),
     }
 }

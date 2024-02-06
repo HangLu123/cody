@@ -3,7 +3,7 @@ import https from 'https'
 
 import { SocksProxyAgent } from 'socks-proxy-agent'
 
-import type { Configuration } from '@sourcegraph/cody-shared'
+import { Configuration } from '@sourcegraph/cody-shared/src/configuration'
 
 import { getConfiguration } from './configuration'
 import { agent } from './fetch'
@@ -37,9 +37,7 @@ function getCustomAgent({ proxy }: Configuration): ({ protocol }: Pick<URL, 'pro
     }
 }
 
-export function setCustomAgent(
-    configuration: Configuration
-): ({ protocol }: Pick<URL, 'protocol'>) => http.Agent {
+export function setCustomAgent(configuration: Configuration): ({ protocol }: Pick<URL, 'protocol'>) => http.Agent {
     agent.current = getCustomAgent(configuration)
     return agent.current as ({ protocol }: Pick<URL, 'protocol'>) => http.Agent
 }
@@ -60,16 +58,12 @@ export function initializeNetworkAgent(): void {
      * c.f. https://github.com/microsoft/vscode/issues/173861
      */
     try {
-        const PacProxyAgent =
-            (globalThis as any)?.[nodeModules]?.[proxyAgentPath]?.[pacProxyAgent] ?? undefined
+        const PacProxyAgent = (globalThis as any)?.[nodeModules]?.[proxyAgentPath]?.[pacProxyAgent] ?? undefined
         if (PacProxyAgent) {
             const originalConnect = PacProxyAgent.prototype.connect
             // Patches the implementation defined here:
             // https://github.com/microsoft/vscode-proxy-agent/blob/d340b9d34684da494d6ebde3bcd18490a8bbd071/src/agent.ts#L53
-            PacProxyAgent.prototype.connect = function (
-                req: http.ClientRequest,
-                opts: { protocol: string }
-            ): any {
+            PacProxyAgent.prototype.connect = function (req: http.ClientRequest, opts: { protocol: string }): any {
                 try {
                     const connectionHeader = req.getHeader('connection')
                     if (

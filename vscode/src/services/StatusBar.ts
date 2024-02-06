@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 
-import { isCodyIgnoredFile, type Configuration } from '@sourcegraph/cody-shared'
+import type { Configuration } from '@sourcegraph/cody-shared/src/configuration'
 
 import { getConfiguration } from '../configuration'
 
@@ -9,8 +9,6 @@ import { FeedbackOptionItems } from './FeedbackOptions'
 interface StatusBarError {
     title: string
     description: string
-    errorType: StatusBarErrorName
-    onShow?: () => void
     onSelect?: () => void
 }
 
@@ -18,7 +16,6 @@ export interface CodyStatusBar {
     dispose(): void
     startLoading(label: string): () => void
     addError(error: StatusBarError): () => void
-    hasError(error: StatusBarErrorName): boolean
 }
 
 const DEFAULT_TEXT = '$(cody-logo-heavy)'
@@ -28,8 +25,6 @@ const QUICK_PICK_ITEM_CHECKED_PREFIX = '$(check) '
 const QUICK_PICK_ITEM_EMPTY_INDENT_PREFIX = '\u00A0\u00A0\u00A0\u00A0\u00A0 '
 
 const ONE_HOUR = 60 * 60 * 1000
-
-type StatusBarErrorName = 'auth' | 'RateLimitError' | 'AutoCompleteDisabledByAdmin'
 
 export function createStatusBar(): CodyStatusBar {
     const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right)
@@ -48,19 +43,17 @@ export function createStatusBar(): CodyStatusBar {
             detail: string,
             setting: string,
             getValue: (config: Configuration) => boolean,
-            requiresReload = false
+            requiresReload: boolean = false
         ): vscode.QuickPickItem & { onSelect: () => Promise<void> } {
             const isEnabled = getValue(config)
             return {
-                label:
-                    (isEnabled ? QUICK_PICK_ITEM_CHECKED_PREFIX : QUICK_PICK_ITEM_EMPTY_INDENT_PREFIX) +
-                    name,
+                label: (isEnabled ? QUICK_PICK_ITEM_CHECKED_PREFIX : QUICK_PICK_ITEM_EMPTY_INDENT_PREFIX) + name,
                 description,
                 detail: QUICK_PICK_ITEM_EMPTY_INDENT_PREFIX + detail,
                 onSelect: async () => {
                     await workspaceConfig.update(setting, !isEnabled, vscode.ConfigurationTarget.Global)
 
-                    const info = `${name} ${isEnabled ? 'disabled' : 'enabled'}.`
+                    const info = name + ' ' + (isEnabled ? 'disabled' : 'enabled') + '.'
                     const response = await (requiresReload
                         ? vscode.window.showInformationMessage(info, 'Reload Window')
                         : vscode.window.showInformationMessage(info))
@@ -70,10 +63,6 @@ export function createStatusBar(): CodyStatusBar {
                     }
                 },
             }
-        }
-
-        if (errors.length > 0) {
-            errors.map(error => error.error.onShow?.())
         }
 
         const option = await vscode.window.showQuickPick(
@@ -126,19 +115,19 @@ export function createStatusBar(): CodyStatusBar {
                     c => c.commandCodeLenses
                 ),
                 createFeatureToggle(
-                    'Command Hints',
-                    undefined,
-                    'Enable hints for Edit and Chat shortcuts, displayed alongside editor selections',
-                    'cody.commandHints.enabled',
-                    c => c.commandHints
+                    'Chat Suggestions',
+                    'Experimental',
+                    'Enable automatically suggested chat questions',
+                    'cody.experimental.chatPredictions',
+                    c => c.experimentalChatPredictions,
+                    true
                 ),
                 createFeatureToggle(
-                    'Search Context',
-                    'Beta',
-                    'Enable using the natural language search index as an Enhanced Context chat source',
-                    'cody.experimental.symfContext',
-                    c => c.experimentalSymfContext,
-                    false
+                    'New Chat UI',
+                    'Experimental',
+                    'Enable new chat panel UI',
+                    'cody.experimental.chatPanel',
+                    c => c.experimentalChatPanel
                 ),
                 { label: 'settings', kind: vscode.QuickPickItemKind.Separator },
                 {
@@ -150,7 +139,7 @@ export function createStatusBar(): CodyStatusBar {
                 {
                     label: '$(symbol-namespace) Custom Commands Settings',
                     async onSelect(): Promise<void> {
-                        await vscode.commands.executeCommand('cody.menu.commands-settings')
+                        await vscode.commands.executeCommand('cody.settings.commands')
                     },
                 },
                 { label: 'feedback & support', kind: vscode.QuickPickItemKind.Separator },
@@ -203,27 +192,6 @@ export function createStatusBar(): CodyStatusBar {
         rerender()
     }
 
-    // NOTE: Behind unstable feature flag and requires .cody/ignore enabled
-    // Listens for changes to the active text editor and updates the status bar text
-    // based on whether the active file is ignored by Cody or not.
-    // If ignored, adds 'Ignored' to the status bar text.
-    // Otherwise, rerenders the status bar.
-    const verifyActiveEditor = (uri?: vscode.Uri) => {
-        // NOTE: Non-file URIs are not supported by the .cody/ignore files and
-        // are ignored by default. As they are files that a user would not expect to
-        // be used by Cody, we will not display them with the "warning".
-        if (uri?.scheme === 'file' && isCodyIgnoredFile(uri)) {
-            statusBarItem.tooltip = 'Current file is ignored by Cody'
-            statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground')
-        } else {
-            rerender()
-        }
-    }
-    const onDocumentChange = vscode.window.onDidChangeActiveTextEditor(e => {
-        verifyActiveEditor(e?.document?.uri)
-    })
-    verifyActiveEditor(vscode.window.activeTextEditor?.document?.uri)
-
     return {
         startLoading(label: string) {
             openLoadingLeases++
@@ -255,13 +223,9 @@ export function createStatusBar(): CodyStatusBar {
                 }
             }
         },
-        hasError(errorName: StatusBarErrorName): boolean {
-            return errors.some(e => e.error.errorType === errorName)
-        },
         dispose() {
             statusBarItem.dispose()
             command.dispose()
-            onDocumentChange.dispose()
         },
     }
 }

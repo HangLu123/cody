@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import type { Range } from '../../testutils/mocks'
+import { Range } from '../../testutils/mocks'
 import { range } from '../../testutils/textDocument'
 import { documentAndPosition } from '../test-helpers'
-import type { InlineCompletionItem } from '../types'
+import { InlineCompletionItem } from '../types'
 
 import { getRangeAdjustedForOverlappingCharacters } from './process-inline-completions'
 

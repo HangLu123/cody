@@ -36,6 +36,7 @@
 }
 
 .submit-button {
+    opacity: 0.8;
     border: none;
     cursor: pointer;
 
@@ -49,12 +50,19 @@
 .context-button {
     color: var(--button-primary-background);
     position: absolute;
-    right: 0.3rem;
-    bottom: 0.3rem;
+    right: 0;
+    bottom: 0;
+
     fill: currentColor;
     background: none;
     border: none;
     cursor: pointer;
+    height: 1.8rem;
+    width: 2rem;
+}
+
+.submit-button:hover {
+    opacity: 1;
 }
 
 .suggestions {

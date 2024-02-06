@@ -1,5 +1,5 @@
-import type { ConfigurationUseContext } from '../configuration'
-import type { ActiveTextEditorSelectionRange } from '../editor'
+import { ConfigurationUseContext } from '../configuration'
+import { ActiveTextEditorSelectionRange } from '../editor'
 
 export interface ChatContextStatus {
     mode?: ConfigurationUseContext

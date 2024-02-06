@@ -1,16 +1,17 @@
-import assert from 'node:assert'
-import type { ChildProcessWithoutNullStreams } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { Readable, Writable } from 'node:stream'
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import assert from 'assert'
+import { ChildProcessWithoutNullStreams } from 'child_process'
+import { appendFileSync, existsSync, mkdirSync, rmSync } from 'fs'
+import { dirname } from 'path'
+import { Readable, Writable } from 'stream'
 
 import * as vscode from 'vscode'
 
-import { isRateLimitError, logError } from '@sourcegraph/cody-shared'
+import { isRateLimitError } from '@sourcegraph/cody-shared/dist/sourcegraph-api/errors'
 
-import type * as agent from './agent-protocol'
-import type * as bfg from './bfg-protocol'
-import type * as embeddings from './embeddings-protocol'
+import * as agent from './agent-protocol'
+import * as bfg from './bfg-protocol'
+import * as embeddings from './embeddings-protocol'
 
 type Requests = bfg.Requests & agent.Requests & embeddings.Requests
 type Notifications = bfg.Notifications & agent.Notifications & embeddings.Notifications
@@ -24,8 +25,8 @@ type Notifications = bfg.Notifications & agent.Notifications & embeddings.Notifi
 // https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/
 
 // String literal types for the names of the Cody Agent protocol methods.
-export type RequestMethodName = keyof Requests
-export type NotificationMethodName = keyof Notifications
+type RequestMethodName = keyof Requests
+type NotificationMethodName = keyof Notifications
 type MethodName = RequestMethodName | NotificationMethodName
 
 // Parameter type of a request or notification. Note: JSON-RPC methods can only
@@ -105,7 +106,7 @@ type MessageHandlerCallback = (err: Error | null, msg: Message | null) => void
 
 /**
  * Absolute path to a file where the agent can write low-level debugging logs to
- * trace all incoming/outgoing JSON messages.
+ * trace all incoming/outgoin JSON messages.
  */
 const tracePath = process.env.CODY_AGENT_TRACE_PATH ?? ''
 
@@ -133,7 +134,7 @@ class MessageDecoder extends Writable {
                 const headerString = this.buffer.toString()
 
                 let startIndex = 0
-                let endIndex: number
+                let endIndex
 
                 // We create this as we might get partial messages
                 // so we only want to set the content length
@@ -142,7 +143,6 @@ class MessageDecoder extends Writable {
 
                 const LINE_TERMINATOR = '\r\n'
 
-                // biome-ignore lint/suspicious/noAssignInExpressions: useful
                 while ((endIndex = headerString.indexOf(LINE_TERMINATOR, startIndex)) !== -1) {
                     const entry = headerString.slice(startIndex, endIndex)
                     const [headerName, headerValue] = entry.split(':').map(_ => _.trim())
@@ -155,7 +155,7 @@ class MessageDecoder extends Writable {
                         // Also what is the client doing 😭
                         this.contentLengthRemaining = newContentLength
                         assert(
-                            Number.isFinite(this.contentLengthRemaining),
+                            isFinite(this.contentLengthRemaining),
                             `parsed Content-Length ${this.contentLengthRemaining} is not a finite number`
                         )
                         continue read
@@ -175,45 +175,43 @@ class MessageDecoder extends Writable {
                 }
 
                 break
-            }
-            if (this.contentLengthRemaining === 0) {
-                try {
-                    const data = JSON.parse(this.contentBuffer.toString())
-                    this.contentBuffer = Buffer.alloc(0)
-                    this.contentLengthRemaining = null
-                    if (tracePath) {
-                        appendFileSync(tracePath, `<- ${JSON.stringify(data, null, 4)}\n`)
+            } else {
+                if (this.contentLengthRemaining === 0) {
+                    try {
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                        const data = JSON.parse(this.contentBuffer.toString())
+                        this.contentBuffer = Buffer.alloc(0)
+                        this.contentLengthRemaining = null
+                        if (tracePath) {
+                            appendFileSync(tracePath, '<- ' + JSON.stringify(data, null, 4) + '\n')
+                        }
+                        this.callback(null, data)
+                    } catch (error: any) {
+                        console.log(
+                            `jsonrpc.ts: JSON parse error against input '${this.contentBuffer}'. Error:\n${error}`
+                        )
+                        if (tracePath) {
+                            appendFileSync(tracePath, '<- ' + JSON.stringify({ error }, null, 4) + '\n')
+                        }
+                        this.callback(error, null)
                     }
-                    this.callback(null, data)
-                } catch (error: any) {
-                    if (tracePath) {
-                        appendFileSync(tracePath, `<- ${JSON.stringify({ error }, null, 4)}\n`)
-                    }
-                    process.stderr.write(
-                        `jsonrpc.ts: JSON parse error against input '${this.contentBuffer}', contentLengthRemaining=${this.contentLengthRemaining}. Error:\n${error}\n`
-                    )
-                    // Kill the process to surface the error as early as
-                    // possible. Before, we did `this.callback(error, null)`
-                    // and it regularly got the agent into an infinite loop
-                    // that was difficult to debug.
-                    process.exit(1)
+
+                    continue
                 }
 
-                continue
+                const data = this.buffer.slice(0, this.contentLengthRemaining)
+
+                // If there isn't anymore data, break out of the loop to wait
+                // for more chunks to be written to the stream.
+                if (data.length === 0) {
+                    break
+                }
+
+                this.contentBuffer = Buffer.concat([this.contentBuffer, data])
+                this.buffer = this.buffer.slice(this.contentLengthRemaining)
+
+                this.contentLengthRemaining -= data.byteLength
             }
-
-            const data = this.buffer.slice(0, this.contentLengthRemaining)
-
-            // If there isn't anymore data, break out of the loop to wait
-            // for more chunks to be written to the stream.
-            if (data.length === 0) {
-                break
-            }
-
-            this.contentBuffer = Buffer.concat([this.contentBuffer, data])
-            this.buffer = this.buffer.slice(this.contentLengthRemaining)
-
-            this.contentLengthRemaining -= data.byteLength
         }
 
         callback()
@@ -225,7 +223,7 @@ class MessageEncoder extends Readable {
 
     public send(data: any): void {
         if (tracePath) {
-            appendFileSync(tracePath, `-> ${JSON.stringify(data, null, 4)}\n`)
+            appendFileSync(tracePath, '-> ' + JSON.stringify(data, null, 4) + '\n')
         }
         this.pause()
 
@@ -242,13 +240,11 @@ class MessageEncoder extends Readable {
     }
 }
 
-export type RequestCallback<M extends RequestMethodName> = (
+type RequestCallback<M extends RequestMethodName> = (
     params: ParamsOf<M>,
     cancelToken: vscode.CancellationToken
 ) => Promise<ResultOf<M>>
-type NotificationCallback<M extends NotificationMethodName> = (
-    params: ParamsOf<M>
-) => void | Promise<void>
+type NotificationCallback<M extends NotificationMethodName> = (params: ParamsOf<M>) => void | Promise<void>
 
 /**
  * Only exported API in this file. MessageHandler exposes a public `messageDecoder` property
@@ -256,7 +252,7 @@ type NotificationCallback<M extends NotificationMethodName> = (
  */
 export class MessageHandler {
     public id = 0
-    public requestHandlers: Map<RequestMethodName, RequestCallback<any>> = new Map()
+    private requestHandlers: Map<RequestMethodName, RequestCallback<any>> = new Map()
     private cancelTokens: Map<Id, vscode.CancellationTokenSource> = new Map()
     private notificationHandlers: Map<NotificationMethodName, NotificationCallback<any>> = new Map()
     private alive = true
@@ -285,9 +281,7 @@ export class MessageHandler {
             this.exit()
         })
         child.on('close', () => {
-            if (this.isAlive()) {
-                reject?.(new Error('close'))
-            }
+            reject?.(new Error('close'))
             this.exit()
         })
         child.on('error', error => {
@@ -295,124 +289,106 @@ export class MessageHandler {
             this.exit()
         })
         child.on('exit', code => {
-            if (code !== 0) {
-                reject?.(new Error(`exit: ${code}`))
-            }
+            reject?.(new Error(`exit: ${code}`))
             this.exit()
         })
         child.stderr.on('data', data => {
             console.error(`----stderr----\n${data}--------------`)
         })
+        // child.stderr.pipe(process.stderr)
         child.stdout.pipe(this.messageDecoder)
         this.messageEncoder.pipe(child.stdin)
     }
 
     // TODO: RPC error handling
-    public messageDecoder: MessageDecoder = new MessageDecoder(
-        (err: Error | null, msg: Message | null) => {
-            if (err) {
-                console.error(`Error: ${err}`)
+    public messageDecoder: MessageDecoder = new MessageDecoder((err: Error | null, msg: Message | null) => {
+        if (err) {
+            console.error(`Error: ${err}`)
+        }
+        if (!msg) {
+            return
+        }
+
+        if (msg.id !== undefined && msg.method) {
+            if (typeof msg.id === 'number' && msg.id > this.id) {
+                this.id = msg.id + 1
             }
-            if (!msg) {
-                return
-            }
 
-            if (msg.id !== undefined && msg.method) {
-                if (typeof msg.id === 'number' && msg.id > this.id) {
-                    this.id = msg.id + 1
-                }
-
-                // Requests have ids and methods
-                const handler = this.requestHandlers.get(msg.method)
-                if (handler) {
-                    const cancelToken: vscode.CancellationTokenSource =
-                        new vscode.CancellationTokenSource()
-                    this.cancelTokens.set(msg.id, cancelToken)
-                    handler(msg.params, cancelToken.token)
-                        .then(
-                            result => {
-                                const data: ResponseMessage<any> = {
-                                    jsonrpc: '2.0',
-                                    id: msg.id,
-
-                                    result,
-                                }
-                                this.messageEncoder.send(data)
-                            },
-                            error => {
-                                const message = error instanceof Error ? error.message : `${error}`
-                                const stack = error instanceof Error ? `\n${error.stack}` : ''
-                                const code = cancelToken.token.isCancellationRequested
-                                    ? ErrorCode.RequestCanceled
-                                    : isRateLimitError(error)
-                                      ? ErrorCode.RateLimitError
-                                      : ErrorCode.InternalError
-                                const data: ResponseMessage<any> = {
-                                    jsonrpc: '2.0',
-                                    id: msg.id,
-                                    error: {
-                                        code,
-                                        // Include the stack in the message because
-                                        // some JSON-RPC bindings like lsp4j don't
-                                        // expose access to the `data` property,
-                                        // only `message`. The stack is super
-                                        // helpful to track down unexpected
-                                        // exceptions.
-                                        message: `${message}\n${stack}`,
-                                        data: JSON.stringify({ error, stack }),
-                                    },
-                                }
-                                this.messageEncoder.send(data)
+            // Requests have ids and methods
+            const handler = this.requestHandlers.get(msg.method)
+            if (handler) {
+                const cancelToken: vscode.CancellationTokenSource = new vscode.CancellationTokenSource()
+                this.cancelTokens.set(msg.id, cancelToken)
+                handler(msg.params, cancelToken.token)
+                    .then(
+                        result => {
+                            const data: ResponseMessage<any> = {
+                                jsonrpc: '2.0',
+                                id: msg.id,
+                                // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                                result,
                             }
-                        )
-                        .finally(() => {
-                            this.cancelTokens.get(msg.id)?.dispose()
-                            this.cancelTokens.delete(msg.id)
-                        })
-                } else {
-                    console.error(`No handler for request with method ${msg.method}`)
-                }
-            } else if (msg.id !== undefined) {
-                // Responses have ids
-                const handler = this.responseHandlers.get(msg.id)
-                if (handler) {
-                    if (msg?.error) {
-                        handler.reject(new JsonrpcError(msg.error))
-                    } else {
-                        handler.resolve(msg.result)
-                    }
-                    this.responseHandlers.delete(msg.id)
-                } else {
-                    console.error(`No handler for response with id ${msg.id}`)
-                }
-            } else if (msg.method) {
-                // Notifications have methods
-                if (
-                    msg.method === '$/cancelRequest' &&
-                    msg.params &&
-                    (typeof msg.params.id === 'string' || typeof msg.params.id === 'number')
-                ) {
-                    this.cancelTokens.get(msg.params.id)?.cancel()
-                    this.cancelTokens.delete(msg.params.id)
-                } else {
-                    const notificationHandler = this.notificationHandlers.get(msg.method)
-                    if (notificationHandler) {
-                        try {
-                            void notificationHandler(msg.params)
-                        } catch (error) {
-                            logError(
-                                'JSON-RPC',
-                                `Uncaught error in notification handler for method '${msg.method}'`,
-                                error + (error instanceof Error ? '\n\n' + error.stack : '')
-                            )
+                            this.messageEncoder.send(data)
+                        },
+                        error => {
+                            const message = error instanceof Error ? error.message : `${error}`
+                            const stack = error instanceof Error ? `\n${error.stack}` : ''
+                            const code = cancelToken.token.isCancellationRequested
+                                ? ErrorCode.RequestCanceled
+                                : isRateLimitError(error)
+                                ? ErrorCode.RateLimitError
+                                : ErrorCode.InternalError
+                            const data: ResponseMessage<any> = {
+                                jsonrpc: '2.0',
+                                id: msg.id,
+                                error: {
+                                    code,
+                                    message,
+                                    data: JSON.stringify({ error, stack }),
+                                },
+                            }
+                            this.messageEncoder.send(data)
                         }
-                    } else {
-                        console.error(`No handler for notification with method ${msg.method}`)
-                    }
+                    )
+                    .finally(() => {
+                        this.cancelTokens.get(msg.id)?.dispose()
+                        this.cancelTokens.delete(msg.id)
+                    })
+            } else {
+                console.error(`No handler for request with method ${msg.method}`)
+            }
+        } else if (msg.id !== undefined) {
+            // Responses have ids
+            const handler = this.responseHandlers.get(msg.id)
+            if (handler) {
+                if (msg?.error) {
+                    handler.reject(new JsonrpcError(msg.error))
+                } else {
+                    handler.resolve(msg.result)
+                }
+                this.responseHandlers.delete(msg.id)
+            } else {
+                console.error(`No handler for response with id ${msg.id}`)
+            }
+        } else if (msg.method) {
+            // Notifications have methods
+            if (
+                msg.method === '$/cancelRequest' &&
+                msg.params &&
+                (typeof msg.params.id === 'string' || typeof msg.params.id === 'number')
+            ) {
+                this.cancelTokens.get(msg.params.id)?.cancel()
+                this.cancelTokens.delete(msg.params.id)
+            } else {
+                const notificationHandler = this.notificationHandlers.get(msg.method)
+                if (notificationHandler) {
+                    void notificationHandler(msg.params)
+                } else {
+                    console.error(`No handler for notification with method ${msg.method}`)
                 }
             }
         }
-    )
+    })
 
     public messageEncoder: MessageEncoder = new MessageEncoder()
 
@@ -420,10 +396,7 @@ export class MessageHandler {
         this.requestHandlers.set(method, callback)
     }
 
-    public registerNotification<M extends NotificationMethodName>(
-        method: M,
-        callback: NotificationCallback<M>
-    ): void {
+    public registerNotification<M extends NotificationMethodName>(method: M, callback: NotificationCallback<M>): void {
         this.notificationHandlers.set(method, callback)
     }
 
@@ -473,7 +446,7 @@ export class MessageHandler {
 /**
  * A client for a JSON-RPC {@link MessageHandler} running in the same process.
  */
-class InProcessClient {
+export class InProcessClient {
     constructor(
         private readonly requestHandlers: Map<RequestMethodName, RequestCallback<any>>,
         private readonly notificationHandlers: Map<NotificationMethodName, NotificationCallback<any>>
@@ -488,7 +461,7 @@ class InProcessClient {
         if (handler) {
             return handler(params, cancelToken)
         }
-        throw new Error(`No such request handler: ${method}`)
+        throw new Error('No such request handler: ' + method)
     }
 
     public notify<M extends NotificationMethodName>(method: M, params: ParamsOf<M>): void {
@@ -497,6 +470,6 @@ class InProcessClient {
             void handler(params)
             return
         }
-        throw new Error(`No such notification handler: ${method}`)
+        throw new Error('No such notification handler: ' + method)
     }
 }

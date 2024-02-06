@@ -1,29 +1,18 @@
 import * as vscode from 'vscode'
 
-import type {
-    ActiveTextEditorSelectionRange,
-    ContextFile,
-    ContextMessage,
-} from '@sourcegraph/cody-shared'
-import type { ContextItem } from '../../prompt-builder/types'
+import { ActiveTextEditorSelectionRange } from '@sourcegraph/cody-shared'
+import { ContextFile, ContextMessage } from '@sourcegraph/cody-shared/src/codebase-context/messages'
 
-export async function openFile(
-    uri: vscode.Uri,
-    range?: ActiveTextEditorSelectionRange,
-    currentViewColumn?: vscode.ViewColumn
-): Promise<void> {
-    const doc = await vscode.workspace.openTextDocument(uri)
+import { ContextItem } from './SimpleChatModel'
 
-    let viewColumn = vscode.ViewColumn.Beside
-    if (currentViewColumn) {
-        viewColumn = currentViewColumn - 1 || currentViewColumn + 1
-    }
-    const selection = range ? new vscode.Range(range.start.line, 0, range.end.line, 0) : range
-    await vscode.window.showTextDocument(doc, {
-        selection,
-        viewColumn,
-        preserveFocus: true,
-        preview: true,
+export const relativeFileUrlScheme = 'cody-file-relative'
+export const embeddingsUrlScheme = 'cody-embeddings'
+
+export function relativeFileUrl(fileName: string, range?: vscode.Range): vscode.Uri {
+    return vscode.Uri.from({
+        scheme: relativeFileUrlScheme,
+        path: fileName,
+        fragment: range && `L${range.start.line}-${range.end.line}`,
     })
 }
 
@@ -42,25 +31,16 @@ export function contextMessageToContextItem(contextMessage: ContextMessage): Con
     const range = contextMessage.file.range
     return {
         text: contextText,
-        uri: contextMessage.file.uri,
-        source: contextMessage.file.source,
-        range:
-            range &&
-            new vscode.Range(
-                range.start.line,
-                range.start.character,
-                range.end.line,
-                range.end.character
-            ),
-        repoName: contextMessage.file.repoName,
-        revision: contextMessage.file.revision,
-        title: contextMessage.file.title,
+        uri:
+            contextMessage.file.uri ||
+            relativeFileUrl(contextMessage.file.fileName, activeEditorSelectionRangeToRange(range)),
+        range: range && new vscode.Range(range.start.line, range.start.character, range.end.line, range.end.character),
     }
 }
 
 export function stripContextWrapper(text: string): string | undefined {
     {
-        const start = text.indexOf('Use the following code snippet')
+        const start = text.indexOf('Use following code snippet')
         if (start >= 0) {
             text = text.slice(start)
             const lines = text.split('\n')
@@ -91,21 +71,21 @@ export function stripContextWrapper(text: string): string | undefined {
 export function contextItemsToContextFiles(items: ContextItem[]): ContextFile[] {
     const contextFiles: ContextFile[] = []
     for (const item of items) {
+        let relFsPath = item.uri.fsPath
+        if (relFsPath.startsWith('/')) {
+            relFsPath = relFsPath.slice(1)
+        }
         contextFiles.push({
-            type: 'file', // TODO(sqs): some of these are symbols; preserve that `type`
-            uri: item.uri,
-            source: item.source || 'embeddings',
+            fileName: relFsPath,
+            source: 'embeddings',
             range: rangeToActiveTextEditorSelectionRange(item.range),
             content: item.text,
-            repoName: item.repoName,
-            revision: item.revision,
-            title: item.title,
         })
     }
     return contextFiles
 }
 
-function rangeToActiveTextEditorSelectionRange(
+export function rangeToActiveTextEditorSelectionRange(
     range?: vscode.Range
 ): ActiveTextEditorSelectionRange | undefined {
     if (!range) {
@@ -123,21 +103,7 @@ function rangeToActiveTextEditorSelectionRange(
     }
 }
 
-export function getChatPanelTitle(lastDisplayText?: string, truncateTitle = true): string {
-    if (!lastDisplayText) {
-        return 'New Chat'
-    }
-    // Regex to remove the markdown formatted links with this format: '[_@FILENAME_]()'
-    const MARKDOWN_LINK_REGEX = /\[_(.+?)_]\((.+?)\)/g
-    lastDisplayText = lastDisplayText.replaceAll(MARKDOWN_LINK_REGEX, '$1')?.trim()
-    if (!truncateTitle) {
-        return lastDisplayText
-    }
-    // truncate title that is too long
-    return lastDisplayText.length > 25 ? `${lastDisplayText.slice(0, 25).trim()}...` : lastDisplayText
-}
-
-export function viewRangeToRange(range?: ActiveTextEditorSelectionRange): vscode.Range | undefined {
+function activeEditorSelectionRangeToRange(range?: ActiveTextEditorSelectionRange): vscode.Range | undefined {
     if (!range) {
         return undefined
     }

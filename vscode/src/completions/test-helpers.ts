@@ -2,7 +2,7 @@ import dedent from 'dedent'
 import type { Position as VSCodePosition, TextDocument as VSCodeTextDocument } from 'vscode'
 import { TextDocument } from 'vscode-languageserver-textdocument'
 
-import { testFileUri, type CompletionResponse } from '@sourcegraph/cody-shared'
+import { CompletionResponse } from '@sourcegraph/cody-shared/src/sourcegraph-api/completions/types'
 
 import { wrapVSCodeTextDocument } from '../testutils/textDocument'
 
@@ -21,6 +21,8 @@ export function completion(string: TemplateStringsArray, ...values: unknown[]): 
 
     const start = raw.indexOf('├')
     const end = raw.lastIndexOf('┤')
+
+    // eslint-disable-next-line yoda
     if (0 <= start && start <= end) {
         completion = raw.slice(start + 1, end)
     }
@@ -35,8 +37,8 @@ const CURSOR_MARKER = '█'
 
 export function document(
     text: string,
-    languageId = 'typescript',
-    uriString = testFileUri('test.ts').toString()
+    languageId: string = 'typescript',
+    uriString = 'file:///test.ts'
 ): VSCodeTextDocument {
     return wrapVSCodeTextDocument(TextDocument.create(uriString, languageId, 0, text))
 }
@@ -57,10 +59,6 @@ export function documentAndPosition(
     return { document: doc, position }
 }
 
-export function nextTick(): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, 0))
-}
-
-export function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms))
+export async function nextTick(): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, 0))
 }

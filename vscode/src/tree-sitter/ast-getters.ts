@@ -1,4 +1,4 @@
-import type { Point, SyntaxNode } from 'web-tree-sitter'
+import { Point, SyntaxNode } from 'web-tree-sitter'
 
 import { isDefined } from '@sourcegraph/cody-shared'
 
@@ -8,10 +8,7 @@ import { isDefined } from '@sourcegraph/cody-shared'
 export function getNodeAtCursorAndParents(
     node: SyntaxNode,
     startPosition: Point
-): readonly [
-    { readonly name: 'at_cursor'; readonly node: SyntaxNode },
-    ...{ name: string; node: SyntaxNode }[],
-] {
+): readonly [{ readonly name: 'at_cursor'; readonly node: SyntaxNode }, ...{ name: string; node: SyntaxNode }[]] {
     const atCursorNode = node.descendantForPosition(startPosition)
 
     const parent = atCursorNode.parent

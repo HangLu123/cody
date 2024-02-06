@@ -1,20 +1,19 @@
-import { Range, type Position, type TextDocument } from 'vscode'
-import type { Tree } from 'web-tree-sitter'
+import { Position, Range, TextDocument } from 'vscode'
+import { Tree } from 'web-tree-sitter'
 
-import { dedupeWith } from '@sourcegraph/cody-shared'
+import { dedupeWith } from '@sourcegraph/cody-shared/src/common'
 
-import { addAutocompleteDebugEvent } from '../../services/open-telemetry/debug-utils'
 import { getNodeAtCursorAndParents } from '../../tree-sitter/ast-getters'
 import { asPoint, getCachedParseTreeForDocument } from '../../tree-sitter/parse-tree-cache'
-import type { DocumentContext } from '../get-current-doc-context'
-import type { ItemPostProcessingInfo } from '../logger'
-import type { InlineCompletionItem } from '../types'
+import { DocumentContext } from '../get-current-doc-context'
+import { ItemPostProcessingInfo } from '../logger'
+import { completionPostProcessLogger } from '../post-process-logger'
+import { InlineCompletionItem } from '../types'
 
-import { dropParserFields, type ParsedCompletion } from './parse-completion'
-import { findLastAncestorOnTheSameRow } from './truncate-parsed-completion'
+import { dropParserFields, ParsedCompletion } from './parse-completion'
 import { collapseDuplicativeWhitespace, removeTrailingWhitespace, trimUntilSuffix } from './utils'
 
-interface ProcessInlineCompletionsParams {
+export interface ProcessInlineCompletionsParams {
     document: TextDocument
     position: Position
     docContext: DocumentContext
@@ -32,11 +31,12 @@ export function processInlineCompletions(
     items: ParsedCompletion[],
     params: ProcessInlineCompletionsParams
 ): InlineCompletionItemWithAnalytics[] {
-    addAutocompleteDebugEvent('enter', {
-        currentLinePrefix: params.docContext.currentLinePrefix,
+    completionPostProcessLogger.info({
+        completionPostProcessId: 'constant',
+        stage: 'enter',
         text: items[0]?.insertText,
+        isCollapsedGroup: true,
     })
-
     // Remove low quality results
     const visibleResults = removeLowQualityCompletions(items)
 
@@ -45,11 +45,12 @@ export function processInlineCompletions(
 
     // Rank results
     const rankedResults = rankCompletions(uniqueResults)
-
-    addAutocompleteDebugEvent('exit', {
-        currentLinePrefix: params.docContext.currentLinePrefix,
+    completionPostProcessLogger.info({
+        completionPostProcessId: 'constant',
+        stage: 'exit',
         text: rankedResults[0]?.insertText,
     })
+    completionPostProcessLogger.flush()
 
     return rankedResults.map(dropParserFields)
 }
@@ -60,12 +61,9 @@ interface ProcessItemParams {
     docContext: DocumentContext
 }
 
-export function processCompletion(
-    completion: ParsedCompletion,
-    params: ProcessItemParams
-): ParsedCompletion {
+export function processCompletion(completion: ParsedCompletion, params: ProcessItemParams): ParsedCompletion {
     const { document, position, docContext } = params
-    const { prefix, suffix, currentLineSuffix, multilineTrigger, multilineTriggerPosition } = docContext
+    const { prefix, suffix, currentLineSuffix, multilineTrigger } = docContext
     let { insertText } = completion
 
     if (completion.insertText.length === 0) {
@@ -80,32 +78,20 @@ export function processCompletion(
         return completion
     }
 
-    completion.range = getRangeAdjustedForOverlappingCharacters(completion, {
-        position,
-        currentLineSuffix,
-    })
+    completion.range = getRangeAdjustedForOverlappingCharacters(completion, { position, currentLineSuffix })
 
     // Use the parse tree WITHOUT the pasted completion to get surrounding node types.
     // Helpful to optimize the completion AST triggers for higher CAR.
-    completion.nodeTypes = getNodeTypesInfo({
-        position,
-        parseTree: getCachedParseTreeForDocument(document)?.tree,
-        multilineTriggerPosition,
-    })
+    completion.nodeTypes = getNodeTypesInfo(position, getCachedParseTreeForDocument(document)?.tree)
 
     // Use the parse tree WITH the pasted completion to get surrounding node types.
     // Helpful to understand CAR for incomplete code snippets.
     // E.g., `const value = ` does not produce a valid AST, but `const value = 'someValue'` does
-    completion.nodeTypesWithCompletion = getNodeTypesInfo({
-        position,
-        parseTree: completion.tree,
-        multilineTriggerPosition,
-    })
+    completion.nodeTypesWithCompletion = getNodeTypesInfo(position, completion.tree)
 
     if (multilineTrigger) {
         insertText = removeTrailingWhitespace(insertText)
     } else {
-        // TODO: move to parse-and-truncate to have one place where truncation happens
         // Only keep a single line in single-line completions mode
         const newLineIndex = insertText.indexOf('\n')
         if (newLineIndex !== -1) {
@@ -122,17 +108,10 @@ export function processCompletion(
     return { ...completion, insertText }
 }
 
-interface GetNodeTypesInfoParams {
-    position: Position
-    parseTree?: Tree
-    multilineTriggerPosition: Position | null
-}
-
 function getNodeTypesInfo(
-    params: GetNodeTypesInfoParams
+    position: Position,
+    parseTree?: Tree
 ): InlineCompletionItemWithAnalytics['nodeTypes'] | undefined {
-    const { position, parseTree, multilineTriggerPosition } = params
-
     const positionBeforeCursor = asPoint({
         line: position.line,
         character: Math.max(0, position.character - 1),
@@ -143,17 +122,12 @@ function getNodeTypesInfo(
 
         if (captures.length > 0) {
             const [atCursor, ...parents] = captures
-            const lastAncestorOnTheSameLine = findLastAncestorOnTheSameRow(
-                parseTree.rootNode,
-                asPoint(multilineTriggerPosition || position)
-            )
 
             return {
                 atCursor: atCursor.node.type,
                 parent: parents[0]?.node.type,
                 grandparent: parents[1]?.node.type,
                 greatGrandparent: parents[2]?.node.type,
-                lastAncestorOnTheSameLine: lastAncestorOnTheSameLine?.type,
             }
         }
     }
@@ -189,6 +163,8 @@ export function getRangeAdjustedForOverlappingCharacters(
 
 export function getMatchingSuffixLength(insertText: string, currentLineSuffix: string): number {
     let j = 0
+
+    // eslint-disable-next-line @typescript-eslint/prefer-for-of
     for (let i = 0; i < insertText.length; i++) {
         if (insertText[i] === currentLineSuffix[j]) {
             j++
@@ -213,17 +189,10 @@ function rankCompletions(completions: ParsedCompletion[]): ParsedCompletion[] {
     })
 }
 
-const PROMPT_CONTINUATIONS = [
-    // Anthropic style prompt continuation
-    /^(\n){0,2}Human:\ /,
-    // StarCoder style code example
-    /^(\/\/|\#) Path:\ /,
-]
 function removeLowQualityCompletions(completions: InlineCompletionItem[]): InlineCompletionItem[] {
-    return completions.filter(c => {
-        const isEmptyOrSingleCharacterCompletion = c.insertText.trim().length <= 1
-        const isPromptContinuation = PROMPT_CONTINUATIONS.some(regex => c.insertText.match(regex))
-
-        return !isEmptyOrSingleCharacterCompletion && !isPromptContinuation
-    })
+    return (
+        completions
+            // Filter out empty or single character completions.
+            .filter(c => c.insertText.trim().length > 1)
+    )
 }

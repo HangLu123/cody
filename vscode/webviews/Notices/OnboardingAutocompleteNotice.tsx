@@ -1,5 +1,4 @@
-import type React from 'react'
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 
 import { getVSCodeAPI } from '../utils/VSCodeApi'
 
@@ -30,9 +29,9 @@ export const OnboardingAutocompleteNotice: React.FunctionComponent = () => {
     return (
         <Notice
             icon={<Icon />}
-            title="Congratulations! You just accepted your first Cody autocomplete."
+            title={<>Congratulations! You just accepted your first Cody autocomplete.</>}
             linkText="Next: Run a Command →"
-            linkHref="command:cody.menu.commands"
+            linkHref="command:cody.action.commands.menu"
             dismissKey="onboarding-autocomplete"
             className="onboarding-autocomplete"
         />
@@ -40,14 +39,7 @@ export const OnboardingAutocompleteNotice: React.FunctionComponent = () => {
 }
 
 const Icon: React.FunctionComponent = () => (
-    <svg
-        className={styles.icon}
-        width="24"
-        height="24"
-        viewBox="0 0 24 24"
-        xmlns="http://www.w3.org/2000/svg"
-        aria-hidden={true}
-    >
+    <svg className={styles.icon} width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <path
             d="M18.09 11.77L19.56 18.1L14 14.74L8.44 18.1L9.9 11.77L5 7.5L11.47 6.96L14 1L16.53 6.96L23 7.5L18.09 11.77Z"
             opacity="0.9"

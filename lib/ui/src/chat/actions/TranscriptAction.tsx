@@ -1,10 +1,10 @@
-import type React from 'react'
+import React from 'react'
 
 import classNames from 'classnames'
 
 import styles from './TranscriptAction.module.css'
 
-interface TranscriptActionStep {
+export interface TranscriptActionStep {
     verb: string
     object: string | JSX.Element
 
@@ -33,7 +33,6 @@ export const TranscriptAction: React.FunctionComponent<{
             </summary>
             <div className={styles.steps}>
                 {steps.map((step, index) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: no other natural key, and this is stable/immutable
                     <span key={index} className={styles.step}>
                         {step.object}
                     </span>

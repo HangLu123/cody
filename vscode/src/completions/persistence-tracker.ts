@@ -3,11 +3,7 @@ import * as vscode from 'vscode'
 
 import { updateRangeMultipleChanges } from '../non-stop/tracked-range'
 
-import {
-    logCompletionPersistencePresentEvent,
-    logCompletionPersistenceRemovedEvent,
-    type CompletionAnalyticsID,
-} from './logger'
+import { CompletionAnalyticsID, logCompletionEvent } from './logger'
 import { lines } from './text-processing'
 
 const MEASURE_TIMEOUTS = [
@@ -69,10 +65,7 @@ export class PersistenceTracker implements vscode.Disposable {
             insertRange.start.line,
             insertRange.start.character,
             insertRange.end.line + textLines.length - 1,
-
-            textLines.length > 1
-                ? textLines.at(-1)!.length
-                : insertRange.end.character + textLines[0].length
+            textLines.length > 1 ? textLines.at(-1)!.length : insertRange.end.character + textLines[0].length
         )
 
         const trackedCompletion = {
@@ -110,9 +103,7 @@ export class PersistenceTracker implements vscode.Disposable {
         // The index in the MEASURE_TIMEOUTS array
         measureTimeoutsIndex: number
     ): void {
-        const isStillTracked = this.trackedCompletions
-            .get(trackedCompletion.uri.toString())
-            ?.has(trackedCompletion)
+        const isStillTracked = this.trackedCompletions.get(trackedCompletion.uri.toString())?.has(trackedCompletion)
         if (!isStillTracked) {
             return
         }
@@ -122,20 +113,17 @@ export class PersistenceTracker implements vscode.Disposable {
 
         if (latestText.length === 0) {
             // Text was fully deleted
-            logCompletionPersistenceRemovedEvent({ id: trackedCompletion.id })
+            logCompletionEvent('persistence:removed', { id: trackedCompletion.id })
         } else {
             const maxLength = Math.max(initialText.length, latestText.length)
             const editOperations = levenshtein(initialText, latestText)
             const difference = editOperations / maxLength
 
-            logCompletionPersistencePresentEvent({
+            logCompletionEvent('persistence:present', {
                 id: trackedCompletion.id,
                 afterSec: MEASURE_TIMEOUTS[measureTimeoutsIndex] / 1000,
                 difference,
-                lineCount:
-                    trackedCompletion.latestRange.end.line -
-                    trackedCompletion.latestRange.start.line +
-                    1,
+                lineCount: trackedCompletion.latestRange.end.line - trackedCompletion.latestRange.start.line + 1,
                 charCount: latestText.length,
             })
 
@@ -163,6 +151,7 @@ export class PersistenceTracker implements vscode.Disposable {
         if (!documentCompletions) {
             return
         }
+
         // Create a list of changes that can be mutated by the `updateRangeMultipleChanges` function
         const mutableChanges = event.contentChanges.map(change => ({
             range: change.range,
@@ -170,10 +159,7 @@ export class PersistenceTracker implements vscode.Disposable {
         }))
 
         for (const trackedCompletion of documentCompletions) {
-            trackedCompletion.latestRange = updateRangeMultipleChanges(
-                trackedCompletion.latestRange,
-                mutableChanges
-            )
+            trackedCompletion.latestRange = updateRangeMultipleChanges(trackedCompletion.latestRange, mutableChanges)
         }
     }
 

@@ -1,12 +1,12 @@
-interface DoneEvent {
+export interface DoneEvent {
     type: 'done'
 }
 
-interface CompletionEvent extends CompletionResponse {
+export interface CompletionEvent extends CompletionResponse {
     type: 'completion'
 }
 
-interface ErrorEvent {
+export interface ErrorEvent {
     type: 'error'
     error: string
 }
@@ -23,6 +23,10 @@ export interface CompletionResponse {
     stopReason: string
 }
 
+export interface LLaMaCompletionResponse {
+    content: string
+}
+
 export interface CompletionParameters {
     fast?: boolean
     messages: Message[]
@@ -32,25 +36,56 @@ export interface CompletionParameters {
     topK?: number
     topP?: number
     model?: string
+    // LLaMa.cpp params
+    prompt?: string
+    stream?: boolean
+    n_predict?: number
+    top_k?: number
+    top_p?: number
 }
 
 export interface CompletionCallbacks {
     onChange: (text: string) => void
+    /**
+     * Only called when a stream successfully completes. If an error is
+     * encountered, this is never called.
+     */
     onComplete: () => void
-    onError: (error: Error, statusCode?: number) => void
+    /**
+     * Only called when a stream fails or encounteres an error. This should be
+     * assumed to be a "complete" event, and no other callbacks will be called
+     * afterwards.
+     */
+    onError: (message: string, statusCode?: number) => void
 }
 
-/**
- * Values for the completion generator that represent the progress of a streaming completion.
- *
- * - `change`: Called when new text is received. The `text` is the full text, not just the new text
- *   since the last `change` value.
- * - `complete`: Only called when a stream successfully completes. If an error is encountered, this
- *   is never called.
- * - `error`: Only called when a stream fails or encounters an error. This should be assumed to be
- *   a "complete" event, and no other callbacks will be called afterwards.
- */
-export type CompletionGeneratorValue =
-    | { type: 'change'; text: string }
-    | { type: 'complete' }
-    | { type: 'error'; error: Error; statusCode?: number }
+export function FormatPrompt(params: CompletionParameters, promptType: string) : CompletionParameters {
+    let prompt = ''
+    switch (promptType) {
+        case 'Guanaco':
+            prompt += "A chat between a curious human and an artificial intelligence assistant.The assistant gives helpful, detailed, and polite answers to the user's questions.\n"
+            params.messages.forEach(e => {
+                const content = e.text ? e.text : ''
+                if (e.speaker == "human") {
+                    prompt +=  `\n### Human:\n${content}\n`
+                }
+                if (e.speaker == "assistant") {
+                    prompt +=  `\n### Assistant:\n${content}\n`
+                }
+            })
+            break
+        default: // WizardCoder format
+            prompt += "Below is an instruction that describes a task. Write a response that appropriately completes the request.\n"
+            params.messages.forEach(e => {
+                const content = e.text ? e.text : ''
+                if (e.speaker == "human") {
+                    prompt +=  `\n### Instruction:\n${content}\n`
+                }
+                if (e.speaker == "assistant") {
+                    prompt += `\n### Response:\n${content}\n`
+                }
+            })
+    }
+    params.prompt = prompt
+    return params
+}

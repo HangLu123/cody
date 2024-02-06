@@ -2,21 +2,22 @@ import React, { useEffect, useRef } from 'react'
 
 import classNames from 'classnames'
 
-import type { ChatMessage, ModelProvider, Guardrails } from '@sourcegraph/cody-shared'
+import { ChatMessage } from '@sourcegraph/cody-shared'
 
-import type {
-    ApiPostMessage,
+import {
     ChatButtonProps,
     ChatModelDropdownMenuProps,
+    ChatModelSelection,
+    ChatUISubmitButtonProps,
+    ChatUITextAreaProps,
     CodeBlockActionsProps,
     EditButtonProps,
     FeedbackButtonsProps,
-    UserAccountInfo,
 } from '../Chat'
 
-import type { FileLinkProps } from './components/EnhancedContext'
-import type { SymbolLinkProps } from './PreciseContext'
-import { TranscriptItem, type TranscriptItemClassNames } from './TranscriptItem'
+import { FileLinkProps } from './components/ContextFiles'
+import { SymbolLinkProps } from './PreciseContext'
+import { TranscriptItem, TranscriptItemClassNames } from './TranscriptItem'
 
 import styles from './Transcript.module.css'
 
@@ -24,24 +25,24 @@ export const Transcript: React.FunctionComponent<
     {
         transcript: ChatMessage[]
         messageInProgress: ChatMessage | null
-        messageBeingEdited: number | undefined
-        setMessageBeingEdited: (index?: number) => void
+        messageBeingEdited: boolean
+        setMessageBeingEdited: (input: boolean) => void
         fileLinkComponent: React.FunctionComponent<FileLinkProps>
         symbolLinkComponent: React.FunctionComponent<SymbolLinkProps>
         className?: string
+        textAreaComponent?: React.FunctionComponent<ChatUITextAreaProps>
         EditButtonContainer?: React.FunctionComponent<EditButtonProps>
+        editButtonOnSubmit?: (text: string) => void
         FeedbackButtonsContainer?: React.FunctionComponent<FeedbackButtonsProps>
         feedbackButtonsOnSubmit?: (text: string) => void
         copyButtonOnSubmit?: CodeBlockActionsProps['copyButtonOnSubmit']
         insertButtonOnSubmit?: CodeBlockActionsProps['insertButtonOnSubmit']
+        submitButtonComponent?: React.FunctionComponent<ChatUISubmitButtonProps>
         ChatButtonComponent?: React.FunctionComponent<ChatButtonProps>
         isTranscriptError?: boolean
-        chatModels?: ModelProvider[]
+        chatModels?: ChatModelSelection[]
         ChatModelDropdownMenu?: React.FunctionComponent<ChatModelDropdownMenuProps>
-        onCurrentChatModelChange?: (model: ModelProvider) => void
-        userInfo: UserAccountInfo
-        postMessage?: ApiPostMessage
-        guardrails?: Guardrails
+        onCurrentChatModelChange?: (model: ChatModelSelection) => void
     } & TranscriptItemClassNames
 > = React.memo(function TranscriptContent({
     transcript,
@@ -57,52 +58,35 @@ export const Transcript: React.FunctionComponent<
     humanTranscriptItemClassName,
     transcriptItemParticipantClassName,
     transcriptActionClassName,
+    textAreaComponent,
     EditButtonContainer,
+    editButtonOnSubmit,
     FeedbackButtonsContainer,
     feedbackButtonsOnSubmit,
     copyButtonOnSubmit,
     insertButtonOnSubmit,
+    submitButtonComponent,
+    chatInputClassName,
     ChatButtonComponent,
     isTranscriptError,
     chatModels,
     ChatModelDropdownMenu,
     onCurrentChatModelChange,
-    userInfo,
-    postMessage,
-    guardrails,
 }) {
     // Scroll the last human message to the top whenever a new human message is received as input.
     const transcriptContainerRef = useRef<HTMLDivElement>(null)
     const scrollAnchoredContainerRef = useRef<HTMLDivElement>(null)
     const lastHumanMessageTopRef = useRef<HTMLDivElement>(null)
-    const itemBeingEditedRef = useRef<HTMLDivElement>(null)
-
     const humanMessageCount = transcript.filter(message => message.speaker === 'human').length
-    // biome-ignore lint/correctness/useExhaustiveDependencies: we want this to refresh
     useEffect(() => {
-        if (!messageBeingEdited && !transcriptContainerRef?.current) {
-            lastHumanMessageTopRef?.current?.scrollIntoView({
+        if (transcriptContainerRef.current) {
+            lastHumanMessageTopRef.current?.scrollIntoView({
                 behavior: 'auto',
                 block: 'start',
                 inline: 'nearest',
             })
         }
-    }, [humanMessageCount, messageBeingEdited])
-
-    // Scroll item being edited to view if it's off-screen
-    useEffect(() => {
-        if (messageBeingEdited === undefined) {
-            return
-        }
-        if (messageBeingEdited !== undefined && itemBeingEditedRef?.current) {
-            itemBeingEditedRef.current.scrollIntoView({
-                behavior: 'smooth',
-                block: 'start',
-                inline: 'nearest',
-            })
-            return
-        }
-    }, [messageBeingEdited])
+    }, [humanMessageCount, transcriptContainerRef])
 
     // When the content was not scrollable, then becomes scrollable, manually
     // scroll the anchor into view. This overrides the browser's default
@@ -141,7 +125,7 @@ export const Transcript: React.FunctionComponent<
         return () => {
             observer.disconnect()
         }
-    }, [])
+    }, [transcriptContainerRef, scrollAnchoredContainerRef])
 
     const lastHumanMessageIndex = findLastIndex(
         transcript,
@@ -157,80 +141,61 @@ export const Transcript: React.FunctionComponent<
     const messageToTranscriptItem =
         (offset: number) =>
         (message: ChatMessage, index: number): JSX.Element | null => {
-            if (!message?.displayText && !message.error) {
+            if (!message?.displayText) {
                 return null
             }
-            // The key index includes the Cody welcome message added to the transcript in the webview
-            // as it is not included in the transcript returned from the server, the key index is
-            // offset by 1 to account for this.
             const offsetIndex = index + offset === earlierMessages.length
-            const keyIndex = index + offset
-            const transcriptIndex = keyIndex - 1
-
-            const isItemBeingEdited = messageBeingEdited === transcriptIndex
-
             return (
-                <div>
-                    {isItemBeingEdited && <div ref={itemBeingEditedRef} />}
-                    <TranscriptItem
-                        index={transcriptIndex}
-                        key={keyIndex}
-                        message={message}
-                        inProgress={
-                            offsetIndex &&
-                            messageInProgress?.speaker === 'assistant' &&
-                            !messageInProgress?.displayText
-                        }
-                        showEditButton={message.speaker === 'human'}
-                        beingEdited={messageBeingEdited}
-                        setBeingEdited={setMessageBeingEdited}
-                        EditButtonContainer={EditButtonContainer}
-                        fileLinkComponent={fileLinkComponent}
-                        symbolLinkComponent={symbolLinkComponent}
-                        codeBlocksCopyButtonClassName={codeBlocksCopyButtonClassName}
-                        codeBlocksInsertButtonClassName={codeBlocksInsertButtonClassName}
-                        transcriptItemClassName={transcriptItemClassName}
-                        humanTranscriptItemClassName={humanTranscriptItemClassName}
-                        transcriptItemParticipantClassName={transcriptItemParticipantClassName}
-                        transcriptActionClassName={transcriptActionClassName}
-                        FeedbackButtonsContainer={FeedbackButtonsContainer}
-                        feedbackButtonsOnSubmit={feedbackButtonsOnSubmit}
-                        copyButtonOnSubmit={copyButtonOnSubmit}
-                        insertButtonOnSubmit={insertButtonOnSubmit}
-                        showFeedbackButtons={index !== 0 && !isTranscriptError && !message.error}
-                        ChatButtonComponent={ChatButtonComponent}
-                        userInfo={userInfo}
-                        postMessage={postMessage}
-                        guardrails={guardrails}
-                    />
-                </div>
+                <TranscriptItem
+                    key={index + offset}
+                    message={message}
+                    inProgress={
+                        offsetIndex && messageInProgress?.speaker === 'assistant' && !messageInProgress?.displayText
+                    }
+                    beingEdited={messageBeingEdited && offsetIndex}
+                    setBeingEdited={setMessageBeingEdited}
+                    fileLinkComponent={fileLinkComponent}
+                    symbolLinkComponent={symbolLinkComponent}
+                    codeBlocksCopyButtonClassName={codeBlocksCopyButtonClassName}
+                    codeBlocksInsertButtonClassName={codeBlocksInsertButtonClassName}
+                    transcriptItemClassName={transcriptItemClassName}
+                    humanTranscriptItemClassName={humanTranscriptItemClassName}
+                    transcriptItemParticipantClassName={transcriptItemParticipantClassName}
+                    transcriptActionClassName={transcriptActionClassName}
+                    textAreaComponent={textAreaComponent}
+                    EditButtonContainer={EditButtonContainer}
+                    editButtonOnSubmit={editButtonOnSubmit}
+                    showEditButton={offsetIndex && !messageInProgress?.speaker && !message.displayText.startsWith('/')}
+                    FeedbackButtonsContainer={FeedbackButtonsContainer}
+                    feedbackButtonsOnSubmit={feedbackButtonsOnSubmit}
+                    copyButtonOnSubmit={copyButtonOnSubmit}
+                    insertButtonOnSubmit={insertButtonOnSubmit}
+                    showFeedbackButtons={index !== 0 && !isTranscriptError}
+                    submitButtonComponent={submitButtonComponent}
+                    chatInputClassName={chatInputClassName}
+                    ChatButtonComponent={ChatButtonComponent}
+                />
             )
         }
 
     return (
         <div ref={transcriptContainerRef} className={classNames(className, styles.container)}>
             <div ref={scrollAnchoredContainerRef} className={classNames(styles.scrollAnchoredContainer)}>
-                {!!chatModels?.length &&
-                    ChatModelDropdownMenu &&
-                    onCurrentChatModelChange &&
-                    userInfo &&
-                    userInfo.isDotComUser && (
-                        <ChatModelDropdownMenu
-                            models={chatModels}
-                            disabled={transcript.length > 1}
-                            onCurrentChatModelChange={onCurrentChatModelChange}
-                            userInfo={userInfo}
-                        />
-                    )}
+                {!!chatModels?.length && ChatModelDropdownMenu && onCurrentChatModelChange && (
+                    <ChatModelDropdownMenu
+                        models={chatModels}
+                        disabled={transcript.length > 1}
+                        onCurrentChatModelChange={onCurrentChatModelChange}
+                    />
+                )}
                 {earlierMessages.map(messageToTranscriptItem(0))}
                 <div ref={lastHumanMessageTopRef} />
                 {lastInteractionMessages.map(messageToTranscriptItem(earlierMessages.length))}
                 {messageInProgress && messageInProgress.speaker === 'assistant' && (
                     <TranscriptItem
-                        index={transcript.length}
                         message={messageInProgress}
                         inProgress={!!transcript[earlierMessages.length].contextFiles}
-                        beingEdited={messageBeingEdited}
+                        beingEdited={false}
                         setBeingEdited={setMessageBeingEdited}
                         fileLinkComponent={fileLinkComponent}
                         symbolLinkComponent={symbolLinkComponent}
@@ -243,9 +208,9 @@ export const Transcript: React.FunctionComponent<
                         showFeedbackButtons={false}
                         copyButtonOnSubmit={copyButtonOnSubmit}
                         insertButtonOnSubmit={insertButtonOnSubmit}
+                        submitButtonComponent={submitButtonComponent}
+                        chatInputClassName={chatInputClassName}
                         ChatButtonComponent={ChatButtonComponent}
-                        postMessage={postMessage}
-                        userInfo={userInfo}
                     />
                 )}
                 {messageInProgress && messageInProgress.speaker === 'assistant' && (

@@ -1,8 +1,10 @@
 import * as vscode from 'vscode'
 
+import { isLocalApp } from '@sourcegraph/cody-shared/src/sourcegraph-api/environments'
+
 import { logDebug, logError } from '../log'
 
-const CODY_ACCESS_TOKEN_SECRET = 'cody.access-token'
+export const CODY_ACCESS_TOKEN_SECRET = 'cody.access-token'
 
 export async function getAccessToken(): Promise<string | null> {
     try {
@@ -15,11 +17,13 @@ export async function getAccessToken(): Promise<string | null> {
         logError('VSCodeSecretStorage:getAccessToken', 'failed', { verbose: error })
         // Remove corrupted token from secret storage
         await secretStorage.delete(CODY_ACCESS_TOKEN_SECRET)
+        // Display system notification because the error was caused by system storage
+        console.error(`Failed to retrieve access token for Cody from secret storage: ${error}`)
         return null
     }
 }
 
-interface SecretStorage {
+export interface SecretStorage {
     get(key: string): Promise<string | undefined>
     store(key: string, value: string): Promise<void>
     storeToken(endpoint: string, value: string): Promise<void>
@@ -55,9 +59,7 @@ export class VSCodeSecretStorage implements SecretStorage {
         // For user that does not have secret storage implemented in their server
         this.fsPath = config.get('experimental.localTokenPath') || null
         if (this.fsPath) {
-            logDebug('VSCodeSecretStorage:experimental.localTokenPath', 'enabled', {
-                verbose: this.fsPath,
-            })
+            logDebug('VSCodeSecretStorage:experimental.localTokenPath', 'enabled', { verbose: this.fsPath })
         }
     }
 
@@ -95,6 +97,9 @@ export class VSCodeSecretStorage implements SecretStorage {
         if (!value || !endpoint) {
             return
         }
+        if (isLocalApp(endpoint)) {
+            await this.store('SOURCEGRAPH_CODY_APP', value)
+        }
         await this.store(endpoint, value)
         await this.store(CODY_ACCESS_TOKEN_SECRET, value)
     }
@@ -119,7 +124,7 @@ export class VSCodeSecretStorage implements SecretStorage {
     }
 }
 
-class InMemorySecretStorage implements SecretStorage {
+export class InMemorySecretStorage implements SecretStorage {
     private storage: Map<string, string>
     private callbacks: ((key: string) => Promise<void>)[]
 
@@ -140,6 +145,7 @@ class InMemorySecretStorage implements SecretStorage {
         this.storage.set(key, value)
 
         for (const cb of this.callbacks) {
+            // eslint-disable-next-line callback-return
             void cb(key)
         }
 
@@ -160,6 +166,7 @@ class InMemorySecretStorage implements SecretStorage {
         this.storage.delete(key)
 
         for (const cb of this.callbacks) {
+            // eslint-disable-next-line callback-return
             void cb(key)
         }
 
@@ -183,7 +190,7 @@ async function getAccessTokenFromFsPath(fsPath: string): Promise<string | null> 
         const decoded = new TextDecoder('utf-8').decode(fileContent)
         const json = JSON.parse(decoded) as ConfigJson
         if (!json.token) {
-            throw new Error(`Failed to retrieve token from: ${fsPath}`)
+            throw new Error('Failed to retrieve token from: ' + fsPath)
         }
         logDebug('VSCodeSecretStorage:getAccessTokenFromFsPath', 'retrieved')
         return json.token

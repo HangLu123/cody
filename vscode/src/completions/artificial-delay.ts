@@ -1,14 +1,14 @@
 import { logDebug } from '../log'
-import type { CompletionIntent } from '../tree-sitter/queries'
+import { CompletionIntent } from '../tree-sitter/queries'
 
 export interface LatencyFeatureFlags {
     user?: boolean
 }
 
 const defaultLatencies = {
-    user: 50,
+    user: 200,
     lowPerformance: 1000,
-    max: 1400,
+    max: 2000,
 }
 
 // Languages with lower performance get additional latency to avoid spamming users with unhelpful
@@ -51,8 +51,7 @@ export function getArtificialDelay(
     let baseline = 0
 
     const isLowPerformanceLanguageId = lowPerformanceLanguageIds.has(languageId)
-    const isLowPerformanceCompletionIntent =
-        completionIntent && lowPerformanceCompletionIntents.has(completionIntent)
+    const isLowPerformanceCompletionIntent = completionIntent && lowPerformanceCompletionIntents.has(completionIntent)
     if (isLowPerformanceLanguageId || isLowPerformanceCompletionIntent) {
         baseline = defaultLatencies.lowPerformance
     }
@@ -71,10 +70,7 @@ export function getArtificialDelay(
     userMetrics.suggested++
     userMetrics.uri = uri
 
-    const total = Math.max(
-        baseline,
-        Math.min(baseline + userMetrics.currentLatency, defaultLatencies.max)
-    )
+    const total = Math.max(baseline, Math.min(baseline + userMetrics.currentLatency, defaultLatencies.max))
 
     // Increase latency linearly up to max after 5 rejected suggestions
     if (userMetrics.suggested >= 5 && userMetrics.currentLatency < defaultLatencies.max) {

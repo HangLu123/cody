@@ -1,7 +1,9 @@
-import type * as vscode from 'vscode'
+import path from 'path'
+
+import * as vscode from 'vscode'
 
 /**
- * A handle to a fixup file. FixupFileObserver is the factory for these; do not
+ * A handle to a fixup file. FixupFileWatcher is the factory for these; do not
  * construct them directly.
  */
 export class FixupFile {
@@ -18,6 +20,14 @@ export class FixupFile {
 
     public get uri(): vscode.Uri {
         return this.uri_
+    }
+
+    public get fileName(): string {
+        return path.basename(this.uri_.fsPath)
+    }
+
+    public get filePath(): string {
+        return this.uri_.fsPath
     }
 
     public toString(): string {

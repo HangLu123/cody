@@ -1,6 +1,5 @@
 import type { StorybookConfig } from '@storybook/react-vite'
-
-import { defineProjectWithDefaults } from '../../../.config/viteShared'
+import { mergeConfig } from 'vite'
 
 const config: StorybookConfig = {
     stories: ['../src/**/*.story.@(js|jsx|ts|tsx)'],
@@ -9,7 +8,9 @@ const config: StorybookConfig = {
         name: '@storybook/react-vite',
         options: {},
     },
-    viteFinal: config => defineProjectWithDefaults(__dirname, config),
+    async viteFinal(config) {
+        return mergeConfig(config, { css: { modules: { localsConvention: 'camelCaseOnly' } } })
+    },
     docs: {
         autodocs: 'tag',
     },

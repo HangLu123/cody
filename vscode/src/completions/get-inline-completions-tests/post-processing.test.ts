@@ -12,7 +12,7 @@ const cases = [true, false]
 
 // Run truncation tests for both strategies: indentation-based and tree-sitter-based.
 // We cannot use `describe.each` here because `toMatchInlineSnapshot` is not supported with it.
-for (const isTreeSitterEnabled of cases) {
+cases.forEach(isTreeSitterEnabled => {
     const label = isTreeSitterEnabled ? 'enabled' : 'disabled'
 
     describe(`[getInlineCompletions] post-processing with tree-sitter ${label}`, () => {
@@ -34,9 +34,9 @@ for (const isTreeSitterEnabled of cases) {
             ).toEqual([" === 'localhost'"]))
 
         it('collapses leading whitespace when prefix has trailing whitespace', async () =>
-            expect(
-                await getInlineCompletionsInsertText(params('const x = █', [completion`├${T}1337┤`]))
-            ).toEqual(['1337']))
+            expect(await getInlineCompletionsInsertText(params('const x = █', [completion`├${T}1337┤`]))).toEqual([
+                '1337',
+            ]))
 
         describe('bad completion starts', () => {
             it.each([
@@ -46,17 +46,15 @@ for (const isTreeSitterEnabled of cases) {
                 [completion`├+  foo┤`, 'foo'],
                 [completion`├-  foo┤`, 'foo'],
             ])('fixes %s to %s', async (completion, expected) =>
-                expect(await getInlineCompletionsInsertText(params('█', [completion]))).toEqual([
-                    expected,
-                ])
+                expect(await getInlineCompletionsInsertText(params('█', [completion]))).toEqual([expected])
             )
         })
 
         describe('odd indentation', () => {
             it('filters out odd indentation in single-line completions', async () =>
-                expect(
-                    await getInlineCompletionsInsertText(params('const foo = █', [completion`├ 1337┤`]))
-                ).toEqual(['1337']))
+                expect(await getInlineCompletionsInsertText(params('const foo = █', [completion`├ 1337┤`]))).toEqual([
+                    '1337',
+                ]))
         })
 
         it('ranks results by number of lines', async () => {
@@ -129,27 +127,6 @@ for (const isTreeSitterEnabled of cases) {
             ).toEqual([])
         })
 
-        // c.f. https://github.com/sourcegraph/cody/issues/2912
-        it('removes prompt-continuations', async () => {
-            expect(
-                await getInlineCompletionsInsertText(
-                    params(
-                        dedent`
-                        function it() {
-                            █
-                    `,
-                        [
-                            // Anthropic-style prompts
-                            completion`\nHuman: Here is some more context code to provide`,
-                            // StarCoder style context snippet
-                            completion`// Path: foo.ts`,
-                            completion`# Path: foo.ts`,
-                        ]
-                    )
-                )
-            ).toEqual([])
-        })
-
         it('removes appends the injected prefix to the completion response since this is not sent to the LLM', async () => {
             expect(
                 await getInlineCompletionsInsertText(
@@ -187,19 +164,13 @@ for (const isTreeSitterEnabled of cases) {
             }
 
             it('adds parse info to single-line completions', async () => {
-                const completions = await getCompletionItems('function sort(█', [
-                    'array) {}',
-                    'array) new',
-                ])
+                const completions = await getCompletionItems('function sort(█', ['array) {}', 'array) new'])
 
                 expect(completions.map(c => Boolean(c.parseErrorCount))).toEqual([false, true])
             })
 
             it('respects completion insert ranges', async () => {
-                const completions = await getCompletionItems('function sort(█)', [
-                    'array) {}',
-                    'array) new',
-                ])
+                const completions = await getCompletionItems('function sort(█)', ['array) {}', 'array) new'])
 
                 expect(completions.map(c => Boolean(c.parseErrorCount))).toEqual([false, true])
             })
@@ -218,12 +189,7 @@ for (const isTreeSitterEnabled of cases) {
 
                 expect(
                     completions.map(c =>
-                        pick(c, [
-                            'insertText',
-                            'nodeTypes',
-                            'nodeTypesWithCompletion',
-                            'parseErrorCount',
-                        ])
+                        pick(c, ['insertText', 'nodeTypes', 'nodeTypesWithCompletion', 'parseErrorCount'])
                     )
                 ).toMatchInlineSnapshot(`
                   [
@@ -233,14 +199,12 @@ for (const isTreeSitterEnabled of cases) {
                         "atCursor": "(",
                         "grandparent": "function_signature",
                         "greatGrandparent": "program",
-                        "lastAncestorOnTheSameLine": "function_signature",
                         "parent": "formal_parameters",
                       },
                       "nodeTypesWithCompletion": {
                         "atCursor": "(",
                         "grandparent": "function_declaration",
                         "greatGrandparent": "program",
-                        "lastAncestorOnTheSameLine": "function_declaration",
                         "parent": "formal_parameters",
                       },
                       "parseErrorCount": 0,
@@ -252,23 +216,20 @@ for (const isTreeSitterEnabled of cases) {
             it('adds parse info to single-line completions', async () => {
                 const [item] = await getCompletionItems('const one = █', ['"one"'])
 
-                expect(
-                    pick(item, ['insertText', 'nodeTypes', 'nodeTypesWithCompletion', 'parseErrorCount'])
-                ).toMatchInlineSnapshot(`
+                expect(pick(item, ['insertText', 'nodeTypes', 'nodeTypesWithCompletion', 'parseErrorCount']))
+                    .toMatchInlineSnapshot(`
                       {
-                        "insertText": ""one"",
+                        "insertText": "\\"one\\"",
                         "nodeTypes": {
                           "atCursor": "program",
                           "grandparent": undefined,
                           "greatGrandparent": undefined,
-                          "lastAncestorOnTheSameLine": "program",
                           "parent": undefined,
                         },
                         "nodeTypesWithCompletion": {
                           "atCursor": "variable_declarator",
                           "grandparent": "program",
                           "greatGrandparent": undefined,
-                          "lastAncestorOnTheSameLine": "lexical_declaration",
                           "parent": "lexical_declaration",
                         },
                         "parseErrorCount": 0,
@@ -277,4 +238,4 @@ for (const isTreeSitterEnabled of cases) {
             })
         }
     })
-}
+})

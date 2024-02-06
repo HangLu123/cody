@@ -2,8 +2,9 @@
   "recommendations": [
     "sourcegraph.cody-ai",
     "editorconfig.editorconfig",
+    "esbenp.prettier-vscode",
     "ecmel.vscode-html-css",
-    "biomejs.biome",
+    "dbaeumer.vscode-eslint",
     "stylelint.vscode-stylelint"
   ]
 }

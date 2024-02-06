@@ -1,49 +1,38 @@
 import { ANSWER_TOKENS } from '../prompt/constants'
-import type { Message } from '../sourcegraph-api'
+import { Message } from '../sourcegraph-api'
+import * as vscode from 'vscode'
 import type { SourcegraphCompletionsClient } from '../sourcegraph-api/completions/client'
-import type {
-    CompletionGeneratorValue,
-    CompletionParameters,
-} from '../sourcegraph-api/completions/types'
+import type { CompletionCallbacks, CompletionParameters } from '../sourcegraph-api/completions/types'
 
 type ChatParameters = Omit<CompletionParameters, 'messages'>
 
-const DEFAULT_CHAT_COMPLETION_PARAMETERS: ChatParameters = {
-    temperature: 0.2,
-    maxTokensToSample: ANSWER_TOKENS,
-    topK: -1,
-    topP: -1,
-}
-
 export class ChatClient {
-    constructor(private completions: SourcegraphCompletionsClient) {}
+    private maxTokens: number
 
-    public chat(
-        messages: Message[],
-        params: Partial<ChatParameters>,
-        abortSignal?: AbortSignal
-    ): AsyncGenerator<CompletionGeneratorValue> {
+    constructor(private completions: SourcegraphCompletionsClient) {
+        let config = vscode.workspace.getConfiguration()
+        this.maxTokens = config.get<number>('cody.chat.maxTokens', 100)
+    }
+
+    public chat(messages: Message[], cb: CompletionCallbacks, params?: Partial<ChatParameters>): () => void {
         const isLastMessageFromHuman = messages.length > 0 && messages.at(-1)!.speaker === 'human'
-
-        const augmentedMessages =
-            // HACK: The fireworks chat inference endpoints requires the last message to be from a
-            // human. This will be the case in most of the prompts but if for some reason we have an
-            // assistant at the end, we slice the last message for now.
-            params?.model?.startsWith('fireworks/')
-                ? isLastMessageFromHuman
-                    ? messages
-                    : messages.slice(0, -1)
-                : isLastMessageFromHuman
-                  ? messages.concat([{ speaker: 'assistant' }])
-                  : messages
+        const augmentedMessages = isLastMessageFromHuman ? messages.concat([{ speaker: 'assistant' }]) : messages
+        const defaults: ChatParameters = {
+            temperature: 0.6,
+            maxTokensToSample: ANSWER_TOKENS,
+            top_k: 20,
+            top_p: 0.85,
+            stream: true,
+            n_predict: this.maxTokens
+        }
 
         return this.completions.stream(
             {
-                ...DEFAULT_CHAT_COMPLETION_PARAMETERS,
+                ...defaults,
                 ...params,
                 messages: augmentedMessages,
             },
-            abortSignal
+            cb
         )
     }
 }

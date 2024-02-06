@@ -1,15 +1,11 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest'
-
-import { ignores, isCodyIgnoredFile, testFileUri, uriBasename } from '@sourcegraph/cody-shared'
+import { describe, expect, it, vi } from 'vitest'
 
 import { getCurrentDocContext } from '../get-current-doc-context'
 import { documentAndPosition } from '../test-helpers'
-import type { ContextRetriever, ContextSnippet } from '../types'
+import { ContextRetriever, ContextSnippet } from '../types'
 
 import { ContextMixer } from './context-mixer'
 import type { ContextStrategyFactory } from './context-strategy'
-import { Utils } from 'vscode-uri'
-import { CODY_IGNORE_URI_PATH } from '@sourcegraph/cody-shared/src/cody-ignore/ignore-helper'
 
 function createMockStrategy(resultSets: ContextSnippet[][]): ContextStrategyFactory {
     const retrievers = []
@@ -39,7 +35,7 @@ const docContext = getCurrentDocContext({
     position,
     maxPrefixLength: 100,
     maxSuffixLength: 100,
-    dynamicMultilineCompletions: false,
+    dynamicMultlilineCompletions: false,
 })
 
 const defaultOptions = {
@@ -55,13 +51,8 @@ describe('ContextMixer', () => {
             const mixer = new ContextMixer(createMockStrategy([]))
             const { context, logSummary } = await mixer.getContext(defaultOptions)
 
-            expect(normalize(context)).toEqual([])
-            expect(logSummary).toEqual({
-                duration: 0,
-                retrieverStats: {},
-                strategy: 'none',
-                totalChars: 0,
-            })
+            expect(context).toEqual([])
+            expect(logSummary).toEqual({ duration: 0, retrieverStats: {}, strategy: 'none', totalChars: 0 })
         })
     })
 
@@ -71,34 +62,26 @@ describe('ContextMixer', () => {
                 createMockStrategy([
                     [
                         {
-                            uri: testFileUri('foo.ts'),
+                            fileName: 'foo.ts',
                             content: 'function foo() {}',
-                            startLine: 0,
-                            endLine: 0,
                         },
                         {
-                            uri: testFileUri('bar.ts'),
+                            fileName: 'bar.ts',
                             content: 'function bar() {}',
-                            startLine: 0,
-                            endLine: 0,
                         },
                     ],
                 ])
             )
             const { context, logSummary } = await mixer.getContext(defaultOptions)
 
-            expect(normalize(context)).toEqual([
+            expect(context).toEqual([
                 {
                     fileName: 'foo.ts',
                     content: 'function foo() {}',
-                    startLine: 0,
-                    endLine: 0,
                 },
                 {
                     fileName: 'bar.ts',
                     content: 'function bar() {}',
-                    startLine: 0,
-                    endLine: 0,
                 },
             ])
             expect(logSummary).toEqual({
@@ -112,7 +95,7 @@ describe('ContextMixer', () => {
                     },
                 },
                 strategy: 'jaccard-similarity',
-                totalChars: 42,
+                totalChars: 34,
             })
         })
     })
@@ -123,79 +106,54 @@ describe('ContextMixer', () => {
                 createMockStrategy([
                     [
                         {
-                            uri: testFileUri('foo.ts'),
+                            fileName: 'foo.ts',
                             content: 'function foo1() {}',
-                            startLine: 0,
-                            endLine: 0,
                         },
                         {
-                            uri: testFileUri('bar.ts'),
+                            fileName: 'bar.ts',
                             content: 'function bar1() {}',
-                            startLine: 0,
-                            endLine: 0,
                         },
                     ],
 
                     [
                         {
-                            uri: testFileUri('foo.ts'),
-                            content: 'function foo3() {}',
-                            startLine: 10,
-                            endLine: 10,
+                            fileName: 'baz.ts',
+                            content: 'function baz2() {}',
                         },
                         {
-                            uri: testFileUri('foo.ts'),
-                            content: 'function foo1() {}\nfunction foo2() {}',
-                            startLine: 0,
-                            endLine: 1,
+                            fileName: 'baz.ts',
+                            content: 'function baz2.2() {}',
                         },
                         {
-                            uri: testFileUri('bar.ts'),
-                            content: 'function bar1() {}\nfunction bar2() {}',
-                            startLine: 0,
-                            endLine: 1,
+                            fileName: 'bar.ts',
+                            content: 'function bar2() {}',
                         },
                     ],
                 ])
             )
             const { context, logSummary } = await mixer.getContext(defaultOptions)
 
-            // The results have overlaps in `foo.ts` and `bar.ts`. `foo.ts` is ranked higher in both
-            // result sets, thus we expect the overlapping `foo.ts` ranges to appear first.
-            // `foo3()` only appears in one result set and should thus be ranked last.
-            expect(normalize(context)).toMatchInlineSnapshot(`
+            expect(context).toMatchInlineSnapshot(`
               [
                 {
-                  "content": "function foo1() {}",
-                  "endLine": 0,
-                  "fileName": "foo.ts",
-                  "startLine": 0,
-                },
-                {
-                  "content": "function foo1() {}
-              function foo2() {}",
-                  "endLine": 1,
-                  "fileName": "foo.ts",
-                  "startLine": 0,
-                },
-                {
                   "content": "function bar1() {}",
-                  "endLine": 0,
                   "fileName": "bar.ts",
-                  "startLine": 0,
                 },
                 {
-                  "content": "function bar1() {}
-              function bar2() {}",
-                  "endLine": 1,
+                  "content": "function bar2() {}",
                   "fileName": "bar.ts",
-                  "startLine": 0,
                 },
                 {
-                  "content": "function foo3() {}",
-                  "endLine": 10,
+                  "content": "function foo1() {}",
                   "fileName": "foo.ts",
-                  "startLine": 10,
+                },
+                {
+                  "content": "function baz2() {}",
+                  "fileName": "baz.ts",
+                },
+                {
+                  "content": "function baz2.2() {}",
+                  "fileName": "baz.ts",
                 },
               ]
             `)
@@ -216,75 +174,8 @@ describe('ContextMixer', () => {
                     },
                 },
                 strategy: 'jaccard-similarity',
-                totalChars: 136,
-            })
-        })
-
-        describe('retrived context is filtered by .cody/ignore', () => {
-            const workspaceRoot = testFileUri('')
-            beforeAll(() => {
-                ignores.setActiveState(true)
-                // all foo.ts files will be ignored
-                ignores.setIgnoreFiles(workspaceRoot, [
-                    {
-                        uri: Utils.joinPath(workspaceRoot, '.', CODY_IGNORE_URI_PATH),
-                        content: '**/foo.ts',
-                    },
-                ])
-            })
-            it('mixes results are filtered', async () => {
-                const mixer = new ContextMixer(
-                    createMockStrategy([
-                        [
-                            {
-                                uri: testFileUri('foo.ts'),
-                                content: 'function foo1() {}',
-                                startLine: 0,
-                                endLine: 0,
-                            },
-                            {
-                                uri: testFileUri('foo/bar.ts'),
-                                content: 'function bar1() {}',
-                                startLine: 0,
-                                endLine: 0,
-                            },
-                        ],
-                        [
-                            {
-                                uri: testFileUri('test/foo.ts'),
-                                content: 'function foo3() {}',
-                                startLine: 10,
-                                endLine: 10,
-                            },
-                            {
-                                uri: testFileUri('foo.ts'),
-                                content: 'function foo1() {}\nfunction foo2() {}',
-                                startLine: 0,
-                                endLine: 1,
-                            },
-                            {
-                                uri: testFileUri('example/bar.ts'),
-                                content: 'function bar1() {}\nfunction bar2() {}',
-                                startLine: 0,
-                                endLine: 1,
-                            },
-                        ],
-                    ])
-                )
-                const { context } = await mixer.getContext(defaultOptions)
-                const contextFiles = normalize(context)
-                // returns 2 bar.ts context
-                expect(contextFiles?.length).toEqual(2)
-                for (const context of contextFiles) {
-                    expect(
-                        isCodyIgnoredFile(Utils.joinPath(workspaceRoot, context.fileName))
-                    ).toBeFalsy()
-                }
+                totalChars: 92,
             })
         })
     })
 })
-
-function normalize(context: ContextSnippet[]): (Omit<ContextSnippet, 'uri'> & { fileName: string })[] {
-    return context.map(({ uri, ...rest }) => ({ ...rest, fileName: uriBasename(uri) }))
-}

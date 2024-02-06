@@ -1,7 +1,6 @@
-import {
-    registerHighlightContributions,
-    renderMarkdown as renderMarkdownCommon,
-} from '../common/markdown'
+import { marked } from 'marked'
+
+import { registerHighlightContributions, renderMarkdown as renderMarkdownCommon } from '../common/markdown'
 
 /**
  * Supported URIs to render as links in outputted markdown.
@@ -9,9 +8,8 @@ import {
  * - vscode: VS Code URL scheme (open in editor)
  * - command:cody. VS Code command scheme for cody (run command)
  *  - e.g. command:cody.welcome: VS Code command scheme exception we add to support directly linking to the welcome guide from within the chat.
- * {@link CODY_PASSTHROUGH_VSCODE_OPEN_COMMAND_ID}
  */
-const ALLOWED_URI_REGEXP = /^((https?|vscode):\/\/[^\s#$./?].\S*|command:(_cody.vscode.open\?.*))$/i
+const ALLOWED_URI_REGEXP = /^((https?|vscode):\/\/[^\s#$./?].\S*|command:cody.*)$/i
 
 const DOMPURIFY_CONFIG = {
     ALLOWED_TAGS: [
@@ -72,4 +70,11 @@ export function renderCodyMarkdown(markdown: string): string {
         dompurifyConfig: DOMPURIFY_CONFIG,
         addTargetBlankToAllLinks: true,
     })
+}
+
+/**
+ * Returns the parsed markdown at block level.
+ */
+export function parseMarkdown(text: string): marked.Token[] {
+    return marked.Lexer.lex(text, { gfm: true })
 }

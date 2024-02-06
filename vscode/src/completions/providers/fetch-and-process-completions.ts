@@ -1,22 +1,26 @@
-import { CompletionStopReason, type CompletionResponseGenerator } from '@sourcegraph/cody-shared'
+import * as uuid from 'uuid'
 
-import { addAutocompleteDebugEvent } from '../../services/open-telemetry/debug-utils'
+import { CompletionResponse } from '@sourcegraph/cody-shared/src/sourcegraph-api/completions/types'
+
 import { canUsePartialCompletion } from '../can-use-partial-completion'
-import type { DocumentContext } from '../get-current-doc-context'
+import { CodeCompletionsClient, CodeCompletionsParams } from '../client'
+import { DocumentContext, getDerivedDocContext } from '../get-current-doc-context'
+import { completionPostProcessLogger } from '../post-process-logger'
 import { getFirstLine } from '../text-processing'
 import { parseAndTruncateCompletion } from '../text-processing/parse-and-truncate-completion'
 import {
+    getMatchingSuffixLength,
+    InlineCompletionItemWithAnalytics,
     processCompletion,
-    type InlineCompletionItemWithAnalytics,
 } from '../text-processing/process-inline-completions'
+import { forkSignal } from '../utils'
 
-import { getDynamicMultilineDocContext } from './dynamic-multiline'
-import { createHotStreakExtractor, type HotStreakExtractor } from './hot-streak'
-import type { ProviderOptions } from './provider'
+import { ProviderOptions } from './provider'
 
-export interface FetchAndProcessCompletionsParams {
-    abortController: AbortController
-    completionResponseGenerator: CompletionResponseGenerator
+interface FetchAndProcessCompletionsParams {
+    client: Pick<CodeCompletionsClient, 'complete'>
+    requestParams: CodeCompletionsParams
+    abortSignal: AbortSignal
     providerSpecificPostProcess: (insertText: string) => string
     providerOptions: Readonly<ProviderOptions>
 }
@@ -25,253 +29,278 @@ export interface FetchAndProcessCompletionsParams {
  * Uses the first line of the completion to figure out if it start the new multiline syntax node.
  * If it does, continues streaming until the completion is truncated or we reach the token sample limit.
  */
-export async function* fetchAndProcessDynamicMultilineCompletions(
+export async function fetchAndProcessDynamicMultilineCompletions(
     params: FetchAndProcessCompletionsParams
-): FetchCompletionsGenerator {
-    const {
-        completionResponseGenerator,
-        abortController,
-        providerOptions,
-        providerSpecificPostProcess,
-    } = params
-    const { hotStreak, docContext, multiline, firstCompletionTimeout } = providerOptions
+): Promise<InlineCompletionItemWithAnalytics> {
+    const { client, requestParams, abortSignal, providerOptions, providerSpecificPostProcess } = params
+    const { multiline, docContext } = providerOptions
 
-    let hotStreakExtractor: undefined | HotStreakExtractor
+    // The Async executor is required to return the completion early if a partial result from SSE can be used.
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
+    return new Promise(async (resolve, reject) => {
+        try {
+            const abortController = forkSignal(abortSignal)
 
-    interface StopParams {
-        completedCompletion: InlineCompletionItemWithAnalytics
-        rawCompletion: string
-        isFullResponse: boolean
-    }
-
-    function* stopStreamingAndUsePartialResponse(
-        stopParams: StopParams
-    ): Generator<FetchCompletionResult> {
-        const { completedCompletion, rawCompletion, isFullResponse } = stopParams
-        addAutocompleteDebugEvent('stopStreamingAndUsePartialResponse', {
-            isFullResponse,
-            text: completedCompletion.insertText,
-        })
-
-        yield {
-            docContext,
-            completion: {
-                ...completedCompletion,
-                stopReason: isFullResponse ? completedCompletion.stopReason : 'streaming-truncation',
-            },
-        }
-
-        // TODO(valery): disable hot-streak for long multiline completions?
-        if (hotStreak) {
-            hotStreakExtractor = createHotStreakExtractor({
-                completedCompletion,
-                ...params,
-            })
-
-            yield* hotStreakExtractor.extract(rawCompletion, isFullResponse)
-        } else {
-            abortController.abort()
-        }
-    }
-
-    const generatorStartTime = performance.now()
-
-    for await (const { completion, stopReason } of completionResponseGenerator) {
-        const isFirstCompletionTimeoutElapsed =
-            performance.now() - generatorStartTime >= firstCompletionTimeout
-        const isFullResponse = stopReason !== CompletionStopReason.StreamingChunk
-        const shouldYieldFirstCompletion = isFullResponse || isFirstCompletionTimeoutElapsed
-
-        const extractCompletion = shouldYieldFirstCompletion
-            ? parseAndTruncateCompletion
-            : canUsePartialCompletion
-        const rawCompletion = providerSpecificPostProcess(completion)
-
-        if (!getFirstLine(rawCompletion) && !shouldYieldFirstCompletion) {
-            continue
-        }
-
-        addAutocompleteDebugEvent(isFullResponse ? 'full_response' : 'incomplete_response', {
-            multiline,
-            currentLinePrefix: docContext.currentLinePrefix,
-            text: rawCompletion,
-        })
-
-        if (hotStreakExtractor) {
-            yield* hotStreakExtractor.extract(rawCompletion, isFullResponse)
-            continue
-        }
-
-        /**
-         * This completion was triggered with the multiline trigger at the end of current line.
-         * Process it as the usual multiline completion: continue streaming until it's truncated.
-         */
-        if (multiline) {
-            addAutocompleteDebugEvent('multiline_branch')
-            const completion = extractCompletion(rawCompletion, {
-                document: providerOptions.document,
-                docContext,
-                isDynamicMultilineCompletion: false,
-            })
-
-            if (completion) {
-                const completedCompletion = processCompletion(completion, providerOptions)
-                yield* stopStreamingAndUsePartialResponse({
-                    completedCompletion,
-                    isFullResponse,
-                    rawCompletion,
-                })
+            function stopStreamingAndUsePartialResponse(completionItem: InlineCompletionItemWithAnalytics): void {
+                resolve({ ...completionItem, stopReason: 'streaming-truncation' })
+                abortController.abort()
             }
 
-            continue
-        }
+            const completionPostProcessId = uuid.v4()
+            let responseChunkNumber = 0
 
-        /**
-         * This completion was started without the multiline trigger at the end of current line.
-         * Check if the the first completion line ends with the multiline trigger. If that's the case
-         * continue streaming and pretend like this completion was multiline in the first place:
-         *
-         * 1. Update `docContext` with the `multilineTrigger` value.
-         * 2. Set the cursor position to the multiline trigger.
-         */
-        const dynamicMultilineDocContext = {
-            ...docContext,
-            ...getDynamicMultilineDocContext({
-                docContext,
-                languageId: providerOptions.document.languageId,
-                insertText: rawCompletion,
-            }),
-        }
+            const result = await client.complete(
+                requestParams,
+                (incompleteResponse: CompletionResponse) => {
+                    completionPostProcessLogger.flush()
+                    responseChunkNumber += 1
+                    completionPostProcessLogger.info({
+                        completionPostProcessId,
+                        stage: `start ${responseChunkNumber}`,
+                    })
 
-        if (dynamicMultilineDocContext.multilineTrigger && !isFirstCompletionTimeoutElapsed) {
-            const completion = extractCompletion(rawCompletion, {
-                document: providerOptions.document,
-                docContext: dynamicMultilineDocContext,
-                isDynamicMultilineCompletion: true,
-            })
+                    const initialCompletion = providerSpecificPostProcess(incompleteResponse.completion)
 
-            if (completion) {
-                addAutocompleteDebugEvent('isMultilineBasedOnFirstLine_resolve', {
-                    currentLinePrefix: dynamicMultilineDocContext.currentLinePrefix,
-                    text: completion.insertText,
-                })
+                    completionPostProcessLogger.info({
+                        completionPostProcessId,
+                        stage: 'incomplete response',
+                        text: initialCompletion,
+                        obj: {
+                            multiline,
+                        },
+                    })
 
-                const completedCompletion = processCompletion(completion, {
-                    document: providerOptions.document,
-                    position: dynamicMultilineDocContext.position,
-                    docContext: dynamicMultilineDocContext,
-                })
+                    /**
+                     * This completion was triggered with the multiline trigger at the end of current line.
+                     * Process it as the usual multline completion: continue streaming until it's truncated.
+                     */
+                    if (multiline) {
+                        completionPostProcessLogger.info({ completionPostProcessId, stage: 'multiline', text: '' })
+                        const completion = canUsePartialCompletion(initialCompletion, {
+                            document: providerOptions.document,
+                            docContext: {
+                                completionPostProcessId,
+                                ...docContext,
+                            },
+                        })
 
-                yield* stopStreamingAndUsePartialResponse({
-                    completedCompletion,
-                    isFullResponse,
-                    rawCompletion,
-                })
+                        if (completion) {
+                            const processedCompletion = processCompletion(completion, providerOptions)
+                            stopStreamingAndUsePartialResponse(processedCompletion)
+                        }
+                    } else {
+                        /**
+                         * This completion was started without the multline trigger at the end of current line.
+                         * Check if the the first completion line ends with the multline trigger. If that's the case
+                         * continue streaming and pretend like this completion was multiline in the first place:
+                         *
+                         * 1. Update `docContext` with the `multilineTrigger` value.
+                         * 2. Set the cursor position to the multiline trigger.
+                         */
+                        const updatedDocContext = getUpdatedDocContext({
+                            ...params,
+                            initialCompletion,
+                            completionPostProcessId,
+                        })
+
+                        if (updatedDocContext.multilineTrigger) {
+                            const completion = canUsePartialCompletion(initialCompletion, {
+                                document: providerOptions.document,
+                                docContext: updatedDocContext,
+                            })
+
+                            if (completion) {
+                                completionPostProcessLogger.info({
+                                    completionPostProcessId,
+                                    stage: 'isMultilineBasedOnFirstLine resolve',
+                                    text: completion.insertText,
+                                })
+
+                                const processedCompletion = processCompletion(
+                                    {
+                                        ...completion,
+                                        insertText: completion.insertText,
+                                    },
+                                    {
+                                        ...providerOptions,
+                                        docContext: updatedDocContext,
+                                    }
+                                )
+                                stopStreamingAndUsePartialResponse(processedCompletion)
+                            }
+                        } else {
+                            /**
+                             * This completion was started without the multline trigger at the end of current line
+                             * and the first generated line does not end with a multiline trigger.
+                             *
+                             * Process this completion as a singleline completion: cut-off after the first new line char.
+                             */
+                            const completion = canUsePartialCompletion(initialCompletion, providerOptions)
+
+                            if (completion) {
+                                const firstLine = getFirstLine(completion.insertText)
+
+                                completionPostProcessLogger.info({
+                                    completionPostProcessId,
+                                    stage: 'singleline resolve',
+                                    text: firstLine,
+                                })
+
+                                const processedCompletion = processCompletion(
+                                    {
+                                        ...completion,
+                                        insertText: firstLine,
+                                    },
+                                    providerOptions
+                                )
+                                stopStreamingAndUsePartialResponse(processedCompletion)
+                            }
+                        }
+                    }
+                },
+                abortController.signal
+            )
+
+            if (abortController.signal.aborted) {
+                return
             }
-        } else {
+
             /**
-             * This completion was started without the multiline trigger at the end of current line
-             * and the first generated line does not end with a multiline trigger.
-             *
-             * Process this completion as a singleline completion: cut-off after the first new line char.
+             * We were not able to use a partial streaming response as a completion and receive the full
+             * compeltion text generated by the LLM.
              */
-            const completion = extractCompletion(rawCompletion, {
-                document: providerOptions.document,
-                docContext,
-                isDynamicMultilineCompletion: false,
+            const initialCompletion = providerSpecificPostProcess(result.completion)
+            completionPostProcessLogger.info({
+                completionPostProcessId,
+                stage: 'full response',
+                text: initialCompletion,
             })
 
-            if (completion) {
-                const firstLine = getFirstLine(completion.insertText)
+            const updatedDocContext = getUpdatedDocContext({
+                ...params,
+                completionPostProcessId,
+                initialCompletion,
+            })
 
-                addAutocompleteDebugEvent('singleline resolve', {
-                    currentLinePrefix: docContext.currentLinePrefix,
-                    text: firstLine,
-                })
+            const completion = parseAndTruncateCompletion(initialCompletion, {
+                document: providerOptions.document,
+                docContext: updatedDocContext,
+            })
 
-                const completedCompletion = processCompletion(
-                    {
-                        ...completion,
-                        insertText: firstLine,
-                    },
-                    providerOptions
-                )
+            completionPostProcessLogger.info({
+                completionPostProcessId,
+                stage: 'full response resolve',
+                text: completion.insertText,
+            })
 
-                yield* stopStreamingAndUsePartialResponse({
-                    isFullResponse,
-                    completedCompletion,
-                    rawCompletion,
-                })
-            }
+            const processedCompletion = processCompletion(completion, {
+                document: providerOptions.document,
+                position: updatedDocContext.position,
+                docContext: updatedDocContext,
+            })
+            resolve({ ...processedCompletion, stopReason: result.stopReason })
+        } catch (error) {
+            reject(error)
         }
-    }
+    })
 }
 
-export type FetchCompletionResult =
-    | {
-          docContext: DocumentContext
-          completion: InlineCompletionItemWithAnalytics
-      }
-    | undefined
-
-type FetchCompletionsGenerator = AsyncGenerator<FetchCompletionResult>
-
-export async function* fetchAndProcessCompletions(
+export async function fetchAndProcessCompletions(
     params: FetchAndProcessCompletionsParams
-): FetchCompletionsGenerator {
-    const {
-        completionResponseGenerator,
-        abortController,
-        providerOptions,
-        providerSpecificPostProcess,
-    } = params
-    const { hotStreak, docContext } = providerOptions
+): Promise<InlineCompletionItemWithAnalytics> {
+    const { client, requestParams, abortSignal, providerOptions, providerSpecificPostProcess } = params
 
-    let hotStreakExtractor: undefined | HotStreakExtractor
+    // The Async executor is required to return the completion early if a partial result from SSE can be used.
+    // eslint-disable-next-line @typescript-eslint/no-misused-promises, no-async-promise-executor
+    return new Promise(async (resolve, reject) => {
+        try {
+            const abortController = forkSignal(abortSignal)
 
-    for await (const { stopReason, completion } of completionResponseGenerator) {
-        addAutocompleteDebugEvent('fetchAndProcessCompletions', {
-            stopReason,
-            completion,
-        })
+            const result = await client.complete(
+                requestParams,
+                (incompleteResponse: CompletionResponse) => {
+                    const initialCompletion = providerSpecificPostProcess(incompleteResponse.completion)
+                    const completion = canUsePartialCompletion(initialCompletion, providerOptions)
 
-        const isFullResponse = stopReason !== CompletionStopReason.StreamingChunk
-        const rawCompletion = providerSpecificPostProcess(completion)
-
-        if (hotStreakExtractor) {
-            yield* hotStreakExtractor.extract(rawCompletion, isFullResponse)
-            continue
-        }
-
-        const extractCompletion = isFullResponse ? parseAndTruncateCompletion : canUsePartialCompletion
-        const parsedCompletion = extractCompletion(rawCompletion, {
-            document: providerOptions.document,
-            docContext,
-            isDynamicMultilineCompletion: false,
-        })
-
-        if (parsedCompletion) {
-            const completedCompletion = processCompletion(parsedCompletion, providerOptions)
-
-            yield {
-                docContext,
-                completion: {
-                    ...completedCompletion,
-                    stopReason: isFullResponse ? stopReason : 'streaming-truncation',
+                    if (completion) {
+                        const processedCompletion = processCompletion(completion, providerOptions)
+                        resolve({ ...processedCompletion, stopReason: 'streaming-truncation' })
+                        abortController.abort()
+                    }
                 },
-            }
+                abortController.signal
+            )
 
-            if (hotStreak) {
-                hotStreakExtractor = createHotStreakExtractor({
-                    completedCompletion,
-                    ...params,
-                })
+            const initialCompletion = providerSpecificPostProcess(result.completion)
+            const completion = parseAndTruncateCompletion(initialCompletion, providerOptions)
 
-                yield* hotStreakExtractor?.extract(rawCompletion, isFullResponse)
-            } else {
-                abortController.abort()
-                break
-            }
+            const processedCompletion = processCompletion(completion, providerOptions)
+            resolve({ ...processedCompletion, stopReason: result.stopReason })
+        } catch (error) {
+            reject(error)
+        }
+    })
+}
+
+interface GetUpdatedDocumentContextParams extends FetchAndProcessCompletionsParams {
+    completionPostProcessId: string
+    initialCompletion: string
+}
+
+/**
+ * 1. Generates the updated document context pretending like the first line of the completion is already in the document.
+ * 2. If the updated document context has the multiline trigger, returns the updated document context.
+ * 3. Otherwise, returns the initial document context.
+ */
+function getUpdatedDocContext(params: GetUpdatedDocumentContextParams): DocumentContext {
+    const { completionPostProcessId, initialCompletion, providerOptions } = params
+    const {
+        position,
+        document,
+        docContext,
+        docContext: { prefix, suffix, currentLineSuffix },
+    } = providerOptions
+
+    const firstLine = getFirstLine(initialCompletion)
+    const matchingSuffixLength = getMatchingSuffixLength(firstLine, currentLineSuffix)
+    const updatedPosition = position.translate(0, firstLine.length - 1)
+
+    completionPostProcessLogger.info({
+        completionPostProcessId,
+        stage: 'getDerivedDocContext',
+        text: initialCompletion,
+    })
+
+    const updatedDocContext = getDerivedDocContext({
+        languageId: document.languageId,
+        position: updatedPosition,
+        dynamicMultlilineCompletions: true,
+        documentDependentContext: {
+            prefix: prefix + firstLine,
+            // Remove the characters that are being replaced by the completion
+            // to reduce the chances of breaking the parse tree with redundant symbols.
+            suffix: suffix.slice(matchingSuffixLength),
+            injectedPrefix: null,
+            completionPostProcessId,
+        },
+    })
+
+    const isMultilineBasedOnFirstLine = Boolean(updatedDocContext.multilineTrigger)
+
+    if (isMultilineBasedOnFirstLine) {
+        completionPostProcessLogger.info({
+            completionPostProcessId,
+            stage: 'isMultilineBasedOnFirstLine',
+            text: initialCompletion,
+        })
+
+        return {
+            ...docContext,
+            completionPostProcessId,
+            multilineTrigger: updatedDocContext.multilineTrigger,
+            multilineTriggerPosition: updatedDocContext.multilineTriggerPosition,
         }
     }
+
+    return docContext
 }

@@ -1,10 +1,11 @@
 import { isError } from '../../utils'
 
-import type { Event } from './types'
+import { Event } from './types'
 
 const EVENT_LINE_PREFIX = 'event: '
 const DATA_LINE_PREFIX = 'data: '
 const EVENTS_SEPARATOR = '\n\n'
+export const LLAMA_ERROR_PREFIX = 'error: '
 
 function parseEventType(eventLine: string): Event['type'] | Error {
     if (!eventLine.startsWith(EVENT_LINE_PREFIX)) {
@@ -41,7 +42,7 @@ function parseEventData(eventType: Event['type'], dataLine: string): Event | Err
             if (isError(data)) {
                 return data
             }
-            if (typeof data.completion === 'undefined') {
+            if (typeof data.completion === undefined) {
                 return new Error('invalid completion event')
             }
             return { type: eventType, completion: data.completion, stopReason: data.stopReason }
@@ -51,7 +52,7 @@ function parseEventData(eventType: Event['type'], dataLine: string): Event | Err
             if (isError(data)) {
                 return data
             }
-            if (typeof data.error === 'undefined') {
+            if (typeof data.error === undefined) {
                 return new Error('invalid error event')
             }
             return { type: eventType, error: data.error }
@@ -92,4 +93,41 @@ export function parseEvents(eventsBuffer: string): EventsParseResult | Error {
     }
 
     return { events, remainingBuffer: eventsBuffer.slice(eventStartIndex) }
+}
+
+export interface JsonParseResult {
+    json: string
+    remainingBuffer: string
+}
+
+export function parseJsonData(dataLine: string): JsonParseResult | Error {
+    const regex = /data: /gi
+    let result, indices = []
+    let cnt = 0
+    while ( (result = regex.exec(dataLine)) && cnt < 2) {
+        indices.push(result.index)
+        cnt += 1
+    }
+    if (indices.length < 2) {
+        return new Error(`cannot parseJsonData: ${dataLine}`)
+    }
+    let endindex = indices[1]-1
+    for ( ; endindex > indices[0]; endindex--) {
+        if (dataLine.at(endindex) == '}') break
+    }
+    return {
+        json: dataLine.substring(indices[0]+DATA_LINE_PREFIX.length, endindex+1), 
+        remainingBuffer: dataLine.substring(indices[1])
+    }
+}
+
+export function parseSSE(jsonData: string): Event | Error {
+    const data = parseJSON<{ content: string; stop: boolean }>(jsonData)
+    if (isError(data)) {
+        return data
+    }
+    if (data['stop']) {
+        return { type: 'done' } 
+    }
+    return { type: 'completion', completion: data['content'], stopReason: '' }   
 }

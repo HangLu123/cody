@@ -1,12 +1,12 @@
+import { ConfigurationWithAccessToken } from '@sourcegraph/cody-shared/src/configuration'
+import { LogEventMode } from '@sourcegraph/cody-shared/src/sourcegraph-api/graphql/client'
 import {
     MockServerTelemetryRecorderProvider,
     NoOpTelemetryRecorderProvider,
+    TelemetryRecorder,
     TelemetryRecorderProvider,
-    type ConfigurationWithAccessToken,
-    type LogEventMode,
-    type TelemetryRecorder,
-} from '@sourcegraph/cody-shared'
-import { CallbackTelemetryProcessor, TimestampTelemetryProcessor } from '@sourcegraph/telemetry'
+} from '@sourcegraph/cody-shared/src/telemetry-v2/TelemetryRecorderProvider'
+import { CallbackTelemetryProcessor } from '@sourcegraph/telemetry'
 
 import { logDebug } from '../log'
 
@@ -17,7 +17,13 @@ let telemetryRecorderProvider: TelemetryRecorderProvider | undefined
 
 /**
  * Recorder for recording telemetry events in the new telemetry framework:
- * https://sourcegraph.com/docs/dev/background-information/telemetry
+ * https://docs.sourcegraph.com/dev/background-information/telemetry
+ *
+ * DEPRECATED: Callsites should ALSO record an event using services/telemetry-v2
+ * as well and indicate this has happened, for example:
+ *
+ *   logEvent(name, properties, { hasV2Event: true })
+ *   telemetryRecorder.recordEvent(...)
  *
  * See GraphQLTelemetryExporter to learn more about how events are exported
  * when recorded using the new recorder.
@@ -27,9 +33,7 @@ let telemetryRecorderProvider: TelemetryRecorderProvider | undefined
  */
 export let telemetryRecorder: TelemetryRecorder = new NoOpTelemetryRecorderProvider().getRecorder([
     new CallbackTelemetryProcessor(() => {
-        if (!process.env.VITEST) {
-            throw new Error('telemetry-v2: recorder used before initialization')
-        }
+        throw new Error('telemetry-v2: recorder used before initialization')
     }),
 ])
 
@@ -48,7 +52,7 @@ const legacyBackcompatLogEventMode: LogEventMode = 'connected-instance-only'
 
 const debugLogLabel = 'telemetry-v2'
 
-function updateGlobalInstances(updatedProvider: TelemetryRecorderProvider & { noOp?: boolean }): void {
+export function updateGlobalInstances(updatedProvider: TelemetryRecorderProvider & { noOp?: boolean }): void {
     telemetryRecorderProvider?.unsubscribe()
     telemetryRecorderProvider = updatedProvider
     telemetryRecorder = updatedProvider.getRecorder([
@@ -60,7 +64,6 @@ function updateGlobalInstances(updatedProvider: TelemetryRecorderProvider & { no
                     event.action
                 }: ${JSON.stringify({
                     parameters: event.parameters,
-                    timestamp: event.timestamp,
                 })}`
             )
         }),
@@ -70,7 +73,7 @@ function updateGlobalInstances(updatedProvider: TelemetryRecorderProvider & { no
 /**
  * Initializes or configures new event-recording globals, which leverage the
  * new telemetry framework:
- * https://sourcegraph.com/docs/dev/background-information/telemetry
+ * https://docs.sourcegraph.com/dev/background-information/telemetry
  */
 export async function createOrUpdateTelemetryRecorderProvider(
     config: ConfigurationWithAccessToken,
@@ -82,15 +85,8 @@ export async function createOrUpdateTelemetryRecorderProvider(
 ): Promise<void> {
     const extensionDetails = getExtensionDetails(config)
 
-    // Add timestamp processor for realistic data in output for dev or no-op scenarios
-    const defaultNoOpProvider = new NoOpTelemetryRecorderProvider([new TimestampTelemetryProcessor()])
-
-    if (
-        config.telemetryLevel === 'off' ||
-        !extensionDetails.ide ||
-        extensionDetails.ideExtensionType !== 'Cody'
-    ) {
-        updateGlobalInstances(defaultNoOpProvider)
+    if (config.telemetryLevel === 'off' || !extensionDetails.ide || extensionDetails.ideExtensionType !== 'Cody') {
+        updateGlobalInstances(new NoOpTelemetryRecorderProvider())
         return
     }
 
@@ -102,20 +98,13 @@ export async function createOrUpdateTelemetryRecorderProvider(
      */
     if (process.env.CODY_TESTING === 'true') {
         logDebug(debugLogLabel, 'using mock exporter')
-        updateGlobalInstances(
-            new MockServerTelemetryRecorderProvider(extensionDetails, config, anonymousUserID)
-        )
+        updateGlobalInstances(new MockServerTelemetryRecorderProvider(extensionDetails, config, anonymousUserID))
     } else if (isExtensionModeDevOrTest) {
         logDebug(debugLogLabel, 'using no-op exports')
-        updateGlobalInstances(defaultNoOpProvider)
+        updateGlobalInstances(new NoOpTelemetryRecorderProvider())
     } else {
         updateGlobalInstances(
-            new TelemetryRecorderProvider(
-                extensionDetails,
-                config,
-                anonymousUserID,
-                legacyBackcompatLogEventMode
-            )
+            new TelemetryRecorderProvider(extensionDetails, config, anonymousUserID, legacyBackcompatLogEventMode)
         )
     }
 
@@ -128,81 +117,11 @@ export async function createOrUpdateTelemetryRecorderProvider(
              * New user
              */
             telemetryRecorder.recordEvent('cody.extension', 'installed')
-        } else if (!config.isRunningInsideAgent) {
+        } else {
             /**
              * Repeat user
              */
             telemetryRecorder.recordEvent('cody.extension', 'savedLogin')
         }
-    }
-}
-
-/**
- * Nifty hack from https://stackoverflow.com/questions/54520676/in-typescript-how-to-get-the-keys-of-an-object-type-whose-values-are-of-a-given
- * that collects the keys of an object where the corresponding value is of a
- * given type as a type.
- */
-type KeysWithNumericValues<T> = keyof { [P in keyof T as T[P] extends number ? P : never]: P }
-
-/**
- * splitSafeMetadata is a helper for legacy telemetry helpers that accept typed
- * event metadata with arbitrarily-shaped values. It checks the types of the
- * parameters and automatically splits them into two objects:
- *
- * - metadata, with numeric values and boolean values converted into 1 or 0.
- * - privateMetadata, which includes everything else
- *
- * We export privateMetadata has special treatment in Sourcegraph.com, but do
- * not export it in private instances unless allowlisted. See
- * https://sourcegraph.com/docs/dev/background-information/telemetry#sensitive-attributes
- * for more details.
- *
- * This is only available as a migration helper - where possible, prefer to use
- * a telemetryRecorder directly instead, and build the parameters at the callsite.
- */
-export function splitSafeMetadata<Properties extends { [key: string]: any }>(
-    properties: Properties
-): {
-    metadata: { [key in KeysWithNumericValues<Properties>]: number }
-    privateMetadata: { [key in keyof Properties]?: any }
-} {
-    const safe: { [key in keyof Properties]?: number } = {}
-    const unsafe: { [key in keyof Properties]?: any } = {}
-    for (const key in properties) {
-        if (!Object.hasOwn(properties, key)) {
-            continue
-        }
-
-        const value = properties[key]
-        switch (typeof value) {
-            case 'number':
-                safe[key] = value
-                break
-            case 'boolean':
-                safe[key] = value ? 1 : 0
-                break
-            case 'object': {
-                const { metadata } = splitSafeMetadata(value)
-                for (const [nestedKey, value] of Object.entries(metadata)) {
-                    // We know splitSafeMetadata returns only an object with
-                    // numbers as values. Unit tests ensures this property holds.
-                    safe[`${key}.${nestedKey}`] = value as number
-                }
-                // Preserve the entire original value in unsafe
-                unsafe[key] = value
-                break
-            }
-
-            // By default, treat as potentially unsafe.
-            default:
-                unsafe[key] = value
-        }
-    }
-    return {
-        // We know we've constructed an object with only numeric values, so
-        // we cast it into the desired type where all the keys with number values
-        // are present. Unit tests ensures this property holds.
-        metadata: safe as { [key in KeysWithNumericValues<Properties>]: number },
-        privateMetadata: unsafe,
     }
 }

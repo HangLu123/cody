@@ -1,85 +1,59 @@
 import * as anthropic from '@anthropic-ai/sdk'
 import * as vscode from 'vscode'
 
-import {
-    displayPath,
-    tokensToChars,
-    type CodeCompletionsClient,
-    type CodeCompletionsParams,
-    type Message,
-} from '@sourcegraph/cody-shared'
+import { tokensToChars } from '@sourcegraph/cody-shared/src/prompt/constants'
+import { Message } from '@sourcegraph/cody-shared/src/sourcegraph-api'
 
+import { CodeCompletionsClient, CodeCompletionsParams } from '../client'
 import {
     CLOSING_CODE_TAG,
-    MULTILINE_STOP_SEQUENCE,
-    OPENING_CODE_TAG,
     extractFromCodeBlock,
     fixBadCompletionStart,
     getHeadAndTail,
+    MULTILINE_STOP_SEQUENCE,
+    OPENING_CODE_TAG,
+    PrefixComponents,
     trimLeadingWhitespaceUntilNewline,
-    type PrefixComponents,
 } from '../text-processing'
-import type { ContextSnippet } from '../types'
-import {
-    forkSignal,
-    generatorWithErrorObserver,
-    generatorWithTimeout,
-    messagesToText,
-    zipGenerators,
-} from '../utils'
+import { InlineCompletionItemWithAnalytics } from '../text-processing/process-inline-completions'
+import { ContextSnippet } from '../types'
+import { messagesToText } from '../utils'
 
-import type { FetchCompletionResult } from './fetch-and-process-completions'
+import { fetchAndProcessCompletions, fetchAndProcessDynamicMultilineCompletions } from './fetch-and-process-completions'
 import {
-    getCompletionParamsAndFetchImpl,
-    getLineNumberDependentCompletionParams,
-} from './get-completion-params'
-import {
+    CompletionProviderTracer,
     Provider,
+    ProviderConfig,
+    ProviderOptions,
     standardContextSizeHints,
-    type CompletionProviderTracer,
-    type ProviderConfig,
-    type ProviderOptions,
 } from './provider'
 
-const MAX_RESPONSE_TOKENS = 256
-
-export const SINGLE_LINE_STOP_SEQUENCES = [
-    anthropic.HUMAN_PROMPT,
-    CLOSING_CODE_TAG,
-    MULTILINE_STOP_SEQUENCE,
-]
 export const MULTI_LINE_STOP_SEQUENCES = [anthropic.HUMAN_PROMPT, CLOSING_CODE_TAG]
+export const SINGLE_LINE_STOP_SEQUENCES = [anthropic.HUMAN_PROMPT, CLOSING_CODE_TAG, MULTILINE_STOP_SEQUENCE]
 
-const lineNumberDependentCompletionParams = getLineNumberDependentCompletionParams({
-    singlelineStopSequences: SINGLE_LINE_STOP_SEQUENCES,
-    multilineStopSequences: MULTI_LINE_STOP_SEQUENCES,
-})
-
-let isOutdatedSourcegraphInstanceWithoutAnthropicAllowlist = false
-
-interface AnthropicOptions {
-    model?: string // The model identifier that is being used by the server's site config.
+export interface AnthropicOptions {
     maxContextTokens?: number
     client: Pick<CodeCompletionsClient, 'complete'>
 }
 
-class AnthropicProvider extends Provider {
+const MAX_RESPONSE_TOKENS = 256
+const DYNAMIC_MULTLILINE_COMPLETIONS_ARGS: Pick<
+    CodeCompletionsParams,
+    'maxTokensToSample' | 'stopSequences' | 'timeoutMs'
+> = {
+    maxTokensToSample: MAX_RESPONSE_TOKENS,
+    stopSequences: MULTI_LINE_STOP_SEQUENCES,
+    timeoutMs: 15_000,
+}
+
+export class AnthropicProvider extends Provider {
     private promptChars: number
     private client: Pick<CodeCompletionsClient, 'complete'>
-    private model: string | undefined
 
-    constructor(
-        options: ProviderOptions,
-        {
-            maxContextTokens,
-            client,
-            model,
-        }: Required<Omit<AnthropicOptions, 'model'>> & Pick<AnthropicOptions, 'model'>
-    ) {
+    constructor(options: ProviderOptions, { maxContextTokens, client }: Required<AnthropicOptions>) {
         super(options)
         this.promptChars = tokensToChars(maxContextTokens - MAX_RESPONSE_TOKENS)
         this.client = client
-        this.model = model
     }
 
     public emptyPromptLength(): number {
@@ -128,10 +102,7 @@ class AnthropicProvider extends Provider {
 
     // Creates the resulting prompt and adds as many snippets from the reference
     // list as possible.
-    protected createPrompt(snippets: ContextSnippet[]): {
-        messages: Message[]
-        prefix: PrefixComponents
-    } {
+    protected createPrompt(snippets: ContextSnippet[]): { messages: Message[]; prefix: PrefixComponents } {
         const { messages: prefixMessages, prefix } = this.createPromptPrefix()
 
         const referenceSnippetMessages: Message[] = []
@@ -145,9 +116,7 @@ class AnthropicProvider extends Provider {
                     text:
                         'symbol' in snippet && snippet.symbol !== ''
                             ? `Additional documentation for \`${snippet.symbol}\`: ${OPENING_CODE_TAG}${snippet.content}${CLOSING_CODE_TAG}`
-                            : `Codebase context from file path '${displayPath(
-                                  snippet.uri
-                              )}': ${OPENING_CODE_TAG}${snippet.content}${CLOSING_CODE_TAG}`,
+                            : `Codebase context from file path '${snippet.fileName}': ${OPENING_CODE_TAG}${snippet.content}${CLOSING_CODE_TAG}`,
                 },
                 {
                     speaker: 'assistant',
@@ -165,79 +134,59 @@ class AnthropicProvider extends Provider {
         return { messages: [...referenceSnippetMessages, ...prefixMessages], prefix }
     }
 
-    public generateCompletions(
+    public async generateCompletions(
         abortSignal: AbortSignal,
         snippets: ContextSnippet[],
         tracer?: CompletionProviderTracer
-    ): AsyncGenerator<FetchCompletionResult[]> {
-        const { partialRequestParams, fetchAndProcessCompletionsImpl } = getCompletionParamsAndFetchImpl(
-            {
-                providerOptions: this.options,
-                lineNumberDependentCompletionParams,
-            }
-        )
+    ): Promise<InlineCompletionItemWithAnalytics[]> {
+        // Create prompt
+        const { messages: prompt } = this.createPrompt(snippets)
+        if (prompt.length > this.promptChars) {
+            throw new Error(`prompt length (${prompt.length}) exceeded maximum character length (${this.promptChars})`)
+        }
+        const { dynamicMultlilineCompletions, multiline } = this.options
 
         const requestParams: CodeCompletionsParams = {
-            ...partialRequestParams,
-            messages: this.createPrompt(snippets).messages,
             temperature: 0.5,
+            messages: prompt,
+            ...(multiline
+                ? {
+                      maxTokensToSample: MAX_RESPONSE_TOKENS,
+                      stopSequences: MULTI_LINE_STOP_SEQUENCES,
+                      timeoutMs: 15000,
+                  }
+                : {
+                      maxTokensToSample: Math.min(50, MAX_RESPONSE_TOKENS),
+                      stopSequences: SINGLE_LINE_STOP_SEQUENCES,
+                      timeoutMs: 5000,
+                  }),
+        }
 
-            // Pass forward the unmodified model identifier that is set in the server's site
-            // config. This allows us to keep working even if the site config was updated since
-            // we read the config value.
-            //
-            // Note: This behavior only works when Cody Gateway is used (as that's the only backend
-            //       that supports switching between providers at the same time). We also only allow
-            //       models that are allowlisted on a recent SG server build to avoid regressions.
-            model:
-                !isOutdatedSourcegraphInstanceWithoutAnthropicAllowlist && isAllowlistedModel(this.model)
-                    ? this.model
-                    : undefined,
+        let fetchAndProcessCompletionsImpl = fetchAndProcessCompletions
+        if (dynamicMultlilineCompletions) {
+            // If the feature flag is enabled use params adjusted for the experiment.
+            Object.assign(requestParams, DYNAMIC_MULTLILINE_COMPLETIONS_ARGS)
+
+            // Use an alternative fetch completions implementation.
+            fetchAndProcessCompletionsImpl = fetchAndProcessDynamicMultilineCompletions
         }
 
         tracer?.params(requestParams)
 
-        const completionsGenerators = Array.from({ length: this.options.n }).map(() => {
-            const abortController = forkSignal(abortSignal)
-
-            const completionResponseGenerator = generatorWithErrorObserver(
-                generatorWithTimeout(
-                    this.client.complete(requestParams, abortController),
-                    requestParams.timeoutMs,
-                    abortController
-                ),
-                error => {
-                    if (error instanceof Error) {
-                        // If an "unsupported code completion model" error is thrown for Anthropic,
-                        // it's most likely because we started adding the `model` identifier to
-                        // requests to ensure the clients does not crash when the default site
-                        // config value changes.
-                        //
-                        // Older instances do not allow for the `model` to be set, even to
-                        // identifiers it supports and thus the error.
-                        //
-                        // If it happens once, we disable the behavior where the client includes a
-                        // `model` parameter.
-                        if (
-                            error.message.includes('Unsupported code completion model') ||
-                            error.message.includes('Unsupported chat model') ||
-                            error.message.includes('Unsupported custom model')
-                        ) {
-                            isOutdatedSourcegraphInstanceWithoutAnthropicAllowlist = true
-                        }
-                    }
-                }
-            )
-
-            return fetchAndProcessCompletionsImpl({
-                completionResponseGenerator,
-                abortController,
-                providerSpecificPostProcess: this.postProcess,
-                providerOptions: this.options,
+        const completions = await Promise.all(
+            Array.from({ length: this.options.n }).map(() => {
+                return fetchAndProcessCompletionsImpl({
+                    client: this.client,
+                    requestParams,
+                    abortSignal,
+                    providerSpecificPostProcess: this.postProcess,
+                    providerOptions: this.options,
+                })
             })
-        })
+        )
 
-        return zipGenerators(completionsGenerators)
+        tracer?.result({ completions })
+        return completions
     }
 
     private postProcess = (rawResponse: string): string => {
@@ -261,44 +210,13 @@ class AnthropicProvider extends Provider {
     }
 }
 
-const PROVIDER_IDENTIFIER = 'anthropic'
-
-export function createProviderConfig({
-    maxContextTokens = 2048,
-    model,
-    /**
-     * Expose provider options here too to set the from the integration tests.
-     * TODO(valery): simplify this API and remove the need to expose it only for tests.
-     */
-    providerOptions,
-    ...otherOptions
-}: AnthropicOptions & { providerOptions?: Partial<ProviderOptions> }): ProviderConfig {
+export function createProviderConfig({ maxContextTokens = 2048, ...otherOptions }: AnthropicOptions): ProviderConfig {
     return {
         create(options: ProviderOptions) {
-            return new AnthropicProvider(
-                {
-                    ...options,
-                    ...providerOptions,
-                    id: PROVIDER_IDENTIFIER,
-                },
-                { maxContextTokens, model, ...otherOptions }
-            )
+            return new AnthropicProvider(options, { maxContextTokens, ...otherOptions })
         },
         contextSizeHints: standardContextSizeHints(maxContextTokens),
-        identifier: PROVIDER_IDENTIFIER,
-        model: model ?? 'claude-instant-1.2',
+        identifier: 'anthropic',
+        model: 'claude-instant-1.2',
     }
-}
-
-// All the Anthropic version identifiers that are allowlisted as being able to be passed as the
-// model identifier on a Sourcegraph Server
-function isAllowlistedModel(model: string | undefined): boolean {
-    switch (model) {
-        case 'anthropic/claude-instant-1.2-cyan':
-        case 'anthropic/claude-instant-1.2':
-        case 'anthropic/claude-instant-v1':
-        case 'anthropic/claude-instant-1':
-            return true
-    }
-    return false
 }

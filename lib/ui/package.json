@@ -5,7 +5,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sourcegraph/cody",
+    "url": "https://github.com/iohub/collama",
     "directory": "lib/ui"
   },
   "main": "dist/index.js",
@@ -21,6 +21,8 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsc --build && cp -R src/* dist/",
+    "lint": "pnpm run lint:js",
+    "lint:js": "eslint --cache '**/*.[tj]s?(x)'",
     "test": "vitest",
     "storybook": "storybook dev -p 6006 --no-open --no-version-updates --no-release-notes",
     "prepublishOnly": "tsc --build --clean && pnpm run build"
@@ -28,7 +30,6 @@
   "dependencies": {
     "@mdi/js": "^7.2.96",
     "@sourcegraph/cody-shared": "workspace:*",
-    "classnames": "^2.3.2",
-    "vscode-uri": "^3.0.7"
+    "classnames": "^2.3.2"
   }
 }

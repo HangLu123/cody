@@ -1,44 +1,76 @@
+import { FeatureFlag, featureFlagProvider } from '@sourcegraph/cody-shared/src/experimentation/FeatureFlagProvider'
+import type {
+    CompletionLogger,
+    CompletionsClientConfig,
+} from '@sourcegraph/cody-shared/src/sourcegraph-api/completions/client'
+import type {
+    CompletionParameters,
+    CompletionResponse,
+    LLaMaCompletionResponse,
+} from '@sourcegraph/cody-shared/src/sourcegraph-api/completions/types'
 import {
-    FeatureFlag,
+    isAbortError,
     NetworkError,
     RateLimitError,
-    CompletionStopReason,
+    TimeoutError,
     TracedError,
-    addTraceparent,
-    featureFlagProvider,
-    getActiveTraceAndSpanId,
-    isAbortError,
-    isNodeResponse,
-    isRateLimitError,
-    type CodeCompletionsClient,
-    type CodeCompletionsParams,
-    type CompletionLogger,
-    type CompletionResponse,
-    type CompletionResponseGenerator,
-    type CompletionsClientConfig,
-    type BrowserOrNodeResponse,
-} from '@sourcegraph/cody-shared'
-
+} from '@sourcegraph/cody-shared/src/sourcegraph-api/errors'
+import { getActiveTraceAndSpanId, getTraceparent } from '@sourcegraph/cody-shared/src/tracing'
+import * as vscode from 'vscode'
 import { fetch } from '../fetch'
+
+import { forkSignal } from './utils'
+
+export type CodeCompletionsParams = Omit<CompletionParameters, 'fast'> & { timeoutMs: number }
+
+export interface CodeCompletionsClient {
+    complete(
+        params: CodeCompletionsParams,
+        onPartialResponse?: (incompleteResponse: CompletionResponse) => void,
+        signal?: AbortSignal
+    ): Promise<CompletionResponse>
+    onConfigurationChange(newConfig: CompletionsClientConfig): void
+}
 
 /**
  * Access the code completion LLM APIs via a Sourcegraph server instance.
  */
-export function createClient(
-    config: CompletionsClientConfig,
-    logger?: CompletionLogger
-): CodeCompletionsClient {
-    async function* complete(
-        params: CodeCompletionsParams,
-        abortController: AbortController
-    ): CompletionResponseGenerator {
-        const url = new URL('/.api/completions/code', config.serverEndpoint).href
-        const log = logger?.startCompletion(params, url)
-        const { signal } = abortController
+export function createClient(config: CompletionsClientConfig, logger?: CompletionLogger): CodeCompletionsClient {
+    function getCodeCompletionsEndpoint(): string {
+        let config = vscode.workspace.getConfiguration()
+        const endpoint = config.get<string>('cody.llama.serverEndpoint')
+        // code completion URL
+        return new URL('/completion', endpoint).href
+    }
+    function getCodeCompletionMaxtokens(): number {
+        let config = vscode.workspace.getConfiguration()
+        return config.get<number>('cody.autocomplete.maxTokens', 30)
+    }
 
-        const tracingFlagEnabled = await featureFlagProvider.evaluateFeatureFlag(
-            FeatureFlag.CodyAutocompleteTracing
-        )
+    function completeWithTimeout(
+        params: CodeCompletionsParams,
+        onPartialResponse?: (incompleteResponse: CompletionResponse) => void,
+        signal?: AbortSignal
+    ): Promise<CompletionResponse> {
+        const abortController = signal ? forkSignal(signal) : new AbortController()
+        return Promise.race([
+            complete(params, onPartialResponse, abortController.signal),
+            createTimeout(params.timeoutMs).finally(() => {
+                // We abort the network request in the next run loop so that the race promise can be
+                // rejected with the timeout error before that.
+                setTimeout(() => abortController.abort(), 0)
+            }),
+        ])
+    }
+
+    async function complete(
+        params: CodeCompletionsParams,
+        onPartialResponse?: (incompleteResponse: CompletionResponse) => void,
+        signal?: AbortSignal
+    ): Promise<CompletionResponse> {
+        const log = logger?.startCompletion(params)
+
+        const tracingFlagEnabled = await featureFlagProvider.evaluateFeatureFlag(FeatureFlag.CodyAutocompleteTracing)
 
         const headers = new Headers(config.customHeaders)
         // Force HTTP connection reuse to reduce latency.
@@ -50,8 +82,10 @@ export function createClient(
         }
         if (tracingFlagEnabled) {
             headers.set('X-Sourcegraph-Should-Trace', '1')
-
-            addTraceparent(headers)
+            const traceparent = getTraceparent()
+            if (traceparent) {
+                headers.set('traceparent', traceparent)
+            }
         }
 
         // We enable streaming only for Node environments right now because it's hard to make
@@ -59,16 +93,15 @@ export function createClient(
         //
         // TODO(philipp-spiess): Feature test if the response is a Node or a browser stream and
         // implement SSE parsing for both.
-        const isNode = typeof process !== 'undefined'
-        const enableStreaming = !!isNode
+        // const isNode = typeof process !== 'undefined'
+        const enableStreaming = false
 
-        // Disable gzip compression since the sg instance will start to batch
-        // responses afterwards.
-        if (enableStreaming) {
-            headers.set('Accept-Encoding', 'gzip;q=0')
-        }
-
-        const response = await fetch(url, {
+        const url = getCodeCompletionsEndpoint()
+        params.messages.forEach(element => {
+            if (element.speaker == 'human') params.prompt = element.text
+        });
+        params.n_predict = getCodeCompletionMaxtokens()
+        const response: Response = await fetch(url, {
             method: 'POST',
             body: JSON.stringify({
                 ...params,
@@ -82,15 +115,13 @@ export function createClient(
 
         // When rate-limiting occurs, the response is an error message
         if (response.status === 429) {
-            // Check for explicit false, because if the header is not set, there is no upgrade
-            // available.
-            //
-            // Note: This header is added only via the Sourcegraph instance and thus not added by
-            //       the helper function.
-            const upgradeIsAvailable =
-                response.headers.get('x-is-cody-pro-user') === 'false' &&
-                typeof response.headers.get('x-is-cody-pro-user') !== 'undefined'
-            throw await createRateLimitErrorFromResponse(response, upgradeIsAvailable)
+            const retryAfter = response.headers.get('retry-after')
+            const limit = response.headers.get('x-ratelimit-limit')
+            throw new RateLimitError(
+                await response.text(),
+                limit ? parseInt(limit, 10) : undefined,
+                retryAfter ? new Date(retryAfter) : undefined
+            )
         }
 
         if (!response.ok) {
@@ -105,90 +136,66 @@ export function createClient(
         // regular JSON payload. This ensures that the request also works against older backends
         const isStreamingResponse = response.headers.get('content-type') === 'text/event-stream'
 
-        let completionResponse: CompletionResponse | undefined = undefined
+        if (isStreamingResponse) {
+            let lastResponse: CompletionResponse | undefined
+            try {
+                // The any cast is necessary because `node-fetch` (The polyfill for fetch we use via
+                // `isomorphic-fetch`) does not implement a proper ReadableStream interface but
+                // instead exposes a Node Stream.
+                //
+                // Since we directly require from `isomporphic-fetch` and gate this branch out from
+                // non Node environments, the response.body will always be a Node Stream instead
+                const iterator = createSSEIterator(response.body as any as AsyncIterableIterator<BufferSource>)
 
-        try {
-            if (isStreamingResponse && isNodeResponse(response)) {
-                const iterator = createSSEIterator(response.body, { aggregatedCompletionEvent: true })
-                let chunkIndex = 0
-
-                for await (const { event, data } of iterator) {
-                    if (event === 'error') {
-                        throw new TracedError(data, traceId)
-                    }
-
-                    if (signal.aborted) {
-                        if (completionResponse) {
-                            completionResponse.stopReason = CompletionStopReason.RequestAborted
+                for await (const chunk of iterator) {
+                    if (chunk.event === 'completion') {
+                        if (signal?.aborted) {
+                            break // Stop processing the already received chunks.
                         }
 
-                        break
+                        lastResponse = JSON.parse(chunk.data) as CompletionResponse
+                        onPartialResponse?.(lastResponse)
                     }
-
-                    if (event === 'completion') {
-                        completionResponse = JSON.parse(data) as CompletionResponse
-
-                        yield {
-                            completion: completionResponse.completion,
-                            stopReason:
-                                completionResponse.stopReason || CompletionStopReason.StreamingChunk,
-                        }
-                    }
-
-                    chunkIndex += 1
                 }
 
-                if (completionResponse === undefined) {
+                if (lastResponse === undefined) {
                     throw new TracedError('No completion response received', traceId)
                 }
+                log?.onComplete(lastResponse)
 
-                if (!completionResponse.stopReason) {
-                    completionResponse.stopReason = CompletionStopReason.RequestFinished
+                return lastResponse
+            } catch (error) {
+                if (isAbortError(error as Error) && lastResponse) {
+                    log?.onComplete(lastResponse)
                 }
 
-                return completionResponse
-            }
-
-            // Handle non-streaming response
-            const result = await response.text()
-            completionResponse = JSON.parse(result) as CompletionResponse
-
-            if (
-                typeof completionResponse.completion !== 'string' ||
-                typeof completionResponse.stopReason !== 'string'
-            ) {
-                const message = `response does not satisfy CodeCompletionResponse: ${result}`
+                const message = `error parsing streaming CodeCompletionResponse: ${error}`
                 log?.onError(message)
                 throw new TracedError(message, traceId)
             }
-
-            return completionResponse
-        } catch (error) {
-            // Shared error handling for both streaming and non-streaming requests.
-            if (isRateLimitError(error as Error)) {
-                throw error
-            }
-
-            // In case of the abort error and non-empty completion response, we can
-            // consider the completion partially completed and want to log it to
-            // the Cody output channel via `log.onComplete()` instead of erroring.
-            if (isAbortError(error as Error) && completionResponse) {
-                completionResponse.stopReason = CompletionStopReason.RequestAborted
-            } else {
-                const message = `error parsing CodeCompletionResponse: ${error}`
-                log?.onError(message, error)
+        } else {
+            const result = await response.text()
+            try {
+                const _response = JSON.parse(result) as LLaMaCompletionResponse
+                const response: CompletionResponse = { completion: _response.content, stopReason: '' }
+                if (typeof response.completion !== 'string' || typeof response.stopReason !== 'string') {
+                    const message = `response does not satisfy CodeCompletionResponse: ${result}`
+                    log?.onError(message)
+                    throw new TracedError(message, traceId)
+                } else {
+                    log?.onComplete(response)
+                    return response
+                }
+            } catch (error) {
+                const message = `error parsing response CodeCompletionResponse: ${error}, response text: ${result}`
+                log?.onError(message)
                 throw new TracedError(message, traceId)
-            }
-        } finally {
-            if (completionResponse) {
-                log?.onComplete(completionResponse)
             }
         }
     }
 
     return {
-        complete,
-        logger,
+        complete: completeWithTimeout,
         onConfigurationChange(newConfig) {
             config = newConfig
         },
@@ -201,38 +208,31 @@ interface SSEMessage {
 }
 
 const SSE_TERMINATOR = '\n\n'
-export async function* createSSEIterator(
-    iterator: NodeJS.ReadableStream,
-    options: {
-        // This is an optimizations to avoid unnecessary work when a streaming chunk contains more
-        // than one completion event. Only use it when the completion repeats all generated tokens
-        // and you can afford to loose some individual chunks.
-        aggregatedCompletionEvent?: boolean
-    } = {}
-): AsyncGenerator<SSEMessage> {
+export async function* createSSEIterator(iterator: AsyncIterableIterator<BufferSource>): AsyncGenerator<SSEMessage> {
     let buffer = ''
     for await (const event of iterator) {
         const messages: SSEMessage[] = []
 
-        buffer += event.toString()
+        const data = new TextDecoder().decode(event)
+        buffer += data
 
         let index: number
-        // biome-ignore lint/suspicious/noAssignInExpressions: useful
         while ((index = buffer.indexOf(SSE_TERMINATOR)) >= 0) {
             const message = buffer.slice(0, index)
             buffer = buffer.slice(index + SSE_TERMINATOR.length)
             messages.push(parseSSEEvent(message))
         }
 
+        // This is a potential optimization because our current backend includes a repetition of the
+        // whole prior completion in each event. If more than one event is detected inside a chunk,
+        // we can skip all but the last completion events.
         for (let i = 0; i < messages.length; i++) {
-            if (options.aggregatedCompletionEvent) {
-                if (
-                    i + 1 < messages.length &&
-                    messages[i].event === 'completion' &&
-                    messages[i + 1].event === 'completion'
-                ) {
-                    continue
-                }
+            if (
+                i + 1 < messages.length &&
+                messages[i].event === 'completion' &&
+                messages[i + 1].event === 'completion'
+            ) {
+                continue
             }
 
             yield messages[i]
@@ -264,17 +264,6 @@ function parseSSEEvent(message: string): SSEMessage {
     return { event, data }
 }
 
-export async function createRateLimitErrorFromResponse(
-    response: BrowserOrNodeResponse,
-    upgradeIsAvailable: boolean
-): Promise<RateLimitError> {
-    const retryAfter = response.headers.get('retry-after')
-    const limit = response.headers.get('x-ratelimit-limit')
-    return new RateLimitError(
-        'autocompletions',
-        await response.text(),
-        upgradeIsAvailable,
-        limit ? parseInt(limit, 10) : undefined,
-        retryAfter
-    )
+function createTimeout(timeoutMs: number): Promise<never> {
+    return new Promise((_, reject) => setTimeout(() => reject(new TimeoutError('The request timed out')), timeoutMs))
 }

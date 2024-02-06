@@ -1,27 +1,18 @@
 import * as vscode from 'vscode'
 
-import { isRateLimitError } from '@sourcegraph/cody-shared'
+import { getSingleLineRange } from '../services/InlineAssist'
 
-import type { FixupTask } from './FixupTask'
+import { FixupTask } from './FixupTask'
 import { CodyTaskState } from './utils'
 
 // Create Lenses based on state
 export function getLensesForTask(task: FixupTask): vscode.CodeLens[] {
-    const codeLensRange = new vscode.Range(task.selectionRange.start, task.selectionRange.start)
-    const isTest = task.intent === 'test'
+    const codeLensRange = getSingleLineRange(task.selectionRange.start.line)
     switch (task.state) {
-        case CodyTaskState.pending:
         case CodyTaskState.working: {
             const title = getWorkingLens(codeLensRange)
             const cancel = getCancelLens(codeLensRange, task.id)
             return [title, cancel]
-        }
-        case CodyTaskState.inserting: {
-            let title = getInsertingLens(codeLensRange)
-            if (isTest) {
-                title = getUnitTestLens(codeLensRange)
-            }
-            return [title]
         }
         case CodyTaskState.applying: {
             const title = getApplyingLens(codeLensRange)
@@ -34,16 +25,13 @@ export function getLensesForTask(task: FixupTask): vscode.CodeLens[] {
         }
         case CodyTaskState.applied: {
             const title = getAppliedLens(codeLensRange, task.id)
-            const accept = getAcceptLens(codeLensRange, task.id)
             const retry = getRetryLens(codeLensRange, task.id)
             const undo = getUndoLens(codeLensRange, task.id)
-            if (isTest) {
-                return [accept, undo]
-            }
-            return [title, accept, retry, undo]
+            const accept = getAcceptLens(codeLensRange, task.id)
+            return [title, retry, undo, accept]
         }
         case CodyTaskState.error: {
-            const title = getErrorLens(codeLensRange, task)
+            const title = getErrorLens(codeLensRange, task.id)
             const discard = getDiscardLens(codeLensRange, task.id)
             return [title, discard]
         }
@@ -53,36 +41,12 @@ export function getLensesForTask(task: FixupTask): vscode.CodeLens[] {
 }
 
 // List of lenses
-function getErrorLens(codeLensRange: vscode.Range, task: FixupTask): vscode.CodeLens {
+function getErrorLens(codeLensRange: vscode.Range, id: string): vscode.CodeLens {
     const lens = new vscode.CodeLens(codeLensRange)
-    if (isRateLimitError(task.error)) {
-        if (task.error.upgradeIsAvailable) {
-            lens.command = {
-                title: '⚡️ Upgrade to Cody Pro',
-                command: 'cody.show-rate-limit-modal',
-                arguments: [
-                    task.error.userMessage,
-                    task.error.retryMessage,
-                    task.error.upgradeIsAvailable,
-                ],
-            }
-        } else {
-            lens.command = {
-                title: '$(warning) Rate Limit Exceeded',
-                command: 'cody.show-rate-limit-modal',
-                arguments: [
-                    task.error.userMessage,
-                    task.error.retryMessage,
-                    task.error.upgradeIsAvailable,
-                ],
-            }
-        }
-    } else {
-        lens.command = {
-            title: '$(warning) Applying Edits Failed',
-            command: 'cody.fixup.codelens.error',
-            arguments: [task.id],
-        }
+    lens.command = {
+        title: '$(warning) Applying edits failed',
+        command: 'cody.fixup.codelens.error',
+        arguments: [id],
     }
     return lens
 }
@@ -91,15 +55,6 @@ function getWorkingLens(codeLensRange: vscode.Range): vscode.CodeLens {
     const lens = new vscode.CodeLens(codeLensRange)
     lens.command = {
         title: '$(sync~spin) Cody is working...',
-        command: 'cody.focus',
-    }
-    return lens
-}
-
-function getInsertingLens(codeLensRange: vscode.Range): vscode.CodeLens {
-    const lens = new vscode.CodeLens(codeLensRange)
-    lens.command = {
-        title: '$(sync~spin) Inserting...',
         command: 'cody.focus',
     }
     return lens
@@ -156,7 +111,7 @@ function getDiscardLens(codeLensRange: vscode.Range, id: string): vscode.CodeLen
 function getAppliedLens(codeLensRange: vscode.Range, id: string): vscode.CodeLens {
     const lens = new vscode.CodeLens(codeLensRange)
     lens.command = {
-        title: '$(cody-logo) Show Diff',
+        title: '$(cody-logo) Edits Applied',
         command: 'cody.fixup.codelens.diff',
         arguments: [id],
     }
@@ -186,18 +141,9 @@ function getUndoLens(codeLensRange: vscode.Range, id: string): vscode.CodeLens {
 function getAcceptLens(codeLensRange: vscode.Range, id: string): vscode.CodeLens {
     const lens = new vscode.CodeLens(codeLensRange)
     lens.command = {
-        title: 'Accept',
+        title: 'Done',
         command: 'cody.fixup.codelens.accept',
         arguments: [id],
-    }
-    return lens
-}
-
-function getUnitTestLens(codeLensRange: vscode.Range): vscode.CodeLens {
-    const lens = new vscode.CodeLens(codeLensRange)
-    lens.command = {
-        title: '$(sync~spin) Generating tests...',
-        command: 'cody.focus',
     }
     return lens
 }

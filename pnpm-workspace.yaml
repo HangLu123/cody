@@ -1,4 +1,11 @@
 packages:
+  - e2e-inspector
+  - e2e
   - agent
+  - cli
   - lib/*
+  - slack
   - vscode
+  - web
+  - completions-review-tool
+  - snippet-extractor

@@ -1,47 +1,38 @@
 import fetch from 'isomorphic-fetch'
-import type { Response as NodeResponse } from 'node-fetch'
-import { URI } from 'vscode-uri'
 
-import type { TelemetryEventInput } from '@sourcegraph/telemetry'
+import { TelemetryEventInput } from '@sourcegraph/telemetry'
 
-import type { ConfigurationWithAccessToken } from '../../configuration'
-import { logDebug, logError } from '../../logger'
-import { addTraceparent, wrapInActiveSpan } from '../../tracing'
+import { ConfigurationWithAccessToken } from '../../configuration'
+import { getTraceparent, startAsyncSpan } from '../../tracing'
 import { isError } from '../../utils'
-import { DOTCOM_URL, isDotCom } from '../environments'
+import { DOTCOM_URL, isDotCom, isLocalApp } from '../environments'
 
 import {
-    CONTEXT_SEARCH_QUERY,
-    CURRENT_SITE_CODY_CONFIG_FEATURES,
     CURRENT_SITE_CODY_LLM_CONFIGURATION,
     CURRENT_SITE_CODY_LLM_PROVIDER,
     CURRENT_SITE_GRAPHQL_FIELDS_QUERY,
     CURRENT_SITE_HAS_CODY_ENABLED_QUERY,
     CURRENT_SITE_IDENTIFICATION,
     CURRENT_SITE_VERSION_QUERY,
-    CURRENT_USER_CODY_PRO_ENABLED_QUERY,
-    CURRENT_USER_CODY_SUBSCRIPTION_QUERY,
+    CURRENT_USER_ID_AND_VERIFIED_EMAIL_AND_CODY_PRO_QUERY,
+    CURRENT_USER_ID_AND_VERIFIED_EMAIL_QUERY,
     CURRENT_USER_ID_QUERY,
-    CURRENT_USER_INFO_QUERY,
     EVALUATE_FEATURE_FLAG_QUERY,
+    GET_CODY_CONTEXT_QUERY,
     GET_FEATURE_FLAGS_QUERY,
+    IS_CONTEXT_REQUIRED_QUERY,
+    LEGACY_SEARCH_EMBEDDINGS_QUERY,
     LOG_EVENT_MUTATION,
     LOG_EVENT_MUTATION_DEPRECATED,
     RECORD_TELEMETRY_EVENTS_MUTATION,
+    REPOSITORY_EMBEDDING_EXISTS_QUERY,
     REPOSITORY_ID_QUERY,
     REPOSITORY_IDS_QUERY,
-    REPOSITORY_LIST_QUERY,
+    REPOSITORY_NAMES_QUERY,
     SEARCH_ATTRIBUTION_QUERY,
+    SEARCH_EMBEDDINGS_QUERY,
 } from './queries'
 import { buildGraphQLUrl } from './url'
-
-export type BrowserOrNodeResponse = Response | NodeResponse
-
-export function isNodeResponse(response: BrowserOrNodeResponse): response is NodeResponse {
-    return Boolean(response.body && !('getReader' in response.body))
-}
-
-const isAgentTesting = process.env.CODY_SHIM_TESTING === 'true'
 
 interface APIResponse<T> {
     data?: T
@@ -68,44 +59,12 @@ interface CurrentUserIdResponse {
     currentUser: { id: string } | null
 }
 
-interface CurrentUserInfoResponse {
-    currentUser: {
-        id: string
-        hasVerifiedEmail: boolean
-        displayName?: string
-        username: string
-        avatarURL: string
-        codyProEnabled: boolean
-        primaryEmail?: { email: string } | null
-    } | null
-}
-interface CodyConfigFeatures {
-    chat: boolean
-    autoComplete: boolean
-    commands: boolean
-    attribution: boolean
+interface CurrentUserIdHasVerifiedEmailResponse {
+    currentUser: { id: string; hasVerifiedEmail: boolean } | null
 }
 
-interface CodyConfigFeaturesResponse {
-    site: { codyConfigFeatures: CodyConfigFeatures | null } | null
-}
-
-interface CurrentUserCodyProEnabledResponse {
-    currentUser: {
-        codyProEnabled: boolean
-    } | null
-}
-
-interface CurrentUserCodySubscriptionResponse {
-    currentUser: {
-        codySubscription: {
-            status: string
-            plan: string
-            applyProRateLimits: boolean
-            currentPeriodStartAt: Date
-            currentPeriodEndAt: Date
-        }
-    } | null
+interface CurrentUserIdHasVerifiedEmailHasCodyProResponse {
+    currentUser: { id: string; hasVerifiedEmail: boolean; codyProEnabled: boolean } | null
 }
 
 interface CodyLLMSiteConfigurationResponse {
@@ -116,23 +75,52 @@ interface CodyLLMSiteConfigurationProviderResponse {
     site: { codyLLMConfiguration: Pick<CodyLLMSiteConfiguration, 'provider'> | null } | null
 }
 
-export interface RepoListResponse {
-    repositories: {
-        nodes: { name: string; id: string }[]
-        pageInfo: {
-            endCursor: string | null
-        }
-    }
-}
-
 interface RepositoryIdResponse {
     repository: { id: string } | null
 }
 
 interface RepositoryIdsResponse {
-    repositories: {
-        nodes: { name: string; id: string }[]
+    repositories: { nodes: { id: string; name: string }[] }
+}
+
+interface RepositoryNamesResponse {
+    repositories: { nodes: { id: string; name: string }[] }
+}
+
+interface RepositoryEmbeddingExistsResponse {
+    repository: { id: string; embeddingExists: boolean } | null
+}
+
+interface EmbeddingsSearchResponse {
+    embeddingsSearch: EmbeddingsSearchResults
+}
+
+interface EmbeddingsMultiSearchResponse {
+    embeddingsMultiSearch: EmbeddingsSearchResults
+}
+
+interface CodyFileChunkContext {
+    __typename: 'FileChunkContext'
+    blob: {
+        path: string
+        repository: {
+            id: string
+            name: string
+        }
+        commit: {
+            id: string
+            oid: string
+        }
     }
+    startLine: number
+    endLine: number
+    chunkContent: string
+}
+
+type GetCodyContextResult = CodyFileChunkContext | null
+
+interface GetCodyContextResponse {
+    getCodyContext: GetCodyContextResult[]
 }
 
 interface SearchAttributionResponse {
@@ -142,47 +130,23 @@ interface SearchAttributionResponse {
     }
 }
 
-type LogEventResponse = unknown
-
-interface ContextSearchResponse {
-    getCodyContext: {
-        blob: {
-            commit: {
-                oid: string
-            }
-            path: string
-            repository: {
-                id: string
-                name: string
-            }
-            url: string
-        }
-        startLine: number
-        endLine: number
-        chunkContent: string
-    }[]
-}
+interface LogEventResponse {}
 
 export interface EmbeddingsSearchResult {
     repoName?: string
     revision?: string
-    uri: URI
+    fileName: string
     startLine: number
     endLine: number
     content: string
 }
 
-export interface ContextSearchResult {
-    repoName: string
-    commit: string
-    uri: URI
-    path: string
-    startLine: number
-    endLine: number
-    content: string
+export interface EmbeddingsSearchResults {
+    codeResults: EmbeddingsSearchResult[]
+    textResults: EmbeddingsSearchResult[]
 }
 
-interface SearchAttributionResults {
+export interface SearchAttributionResults {
     limitHit: boolean
     nodes: { repositoryName: string }[]
 }
@@ -197,21 +161,8 @@ export interface CodyLLMSiteConfiguration {
     provider?: string
 }
 
-export interface CurrentUserCodySubscription {
-    status: string
-    plan: string
-    applyProRateLimits: boolean
-    currentPeriodStartAt: Date
-    currentPeriodEndAt: Date
-}
-
-interface CurrentUserInfo {
-    id: string
-    hasVerifiedEmail: boolean
-    username: string
-    displayName?: string
-    avatarURL: string
-    primaryEmail?: { email: string } | null
+interface IsContextRequiredForChatQueryResponse {
+    isContextRequiredForChatQuery: boolean
 }
 
 interface EvaluatedFeatureFlag {
@@ -248,8 +199,8 @@ export interface event {
     userCookieID: string
     url: string
     source: string
-    argument?: string | unknown
-    publicArgument?: string | unknown
+    argument?: string | {}
+    publicArgument?: string | {}
     client: string
     connectedSiteID?: string
     hashedLicenseKey?: string
@@ -312,20 +263,20 @@ export class SourcegraphGraphQLAPIClient {
         return isDotCom(this.config.serverEndpoint)
     }
 
-    // Gets the server endpoint for this client.
+    public isLocalApp(): boolean {
+        return isLocalApp(this.config.serverEndpoint)
+    }
+
+    // Gets the server endpoint for this client. The UI uses this to display
+    // which endpoint provides embeddings.
     public get endpoint(): string {
         return this.config.serverEndpoint
     }
 
     public async getSiteVersion(): Promise<string | Error> {
-        return this.fetchSourcegraphAPI<APIResponse<SiteVersionResponse>>(
-            CURRENT_SITE_VERSION_QUERY,
-            {}
-        ).then(response =>
-            extractDataOrError(
-                response,
-                data => data.site?.productVersion ?? new Error('site version not found')
-            )
+        return this.fetchSourcegraphAPI<APIResponse<SiteVersionResponse>>(CURRENT_SITE_VERSION_QUERY, {}).then(
+            response =>
+                extractDataOrError(response, data => data.site?.productVersion ?? new Error('site version not found'))
         )
     }
 
@@ -351,10 +302,7 @@ export class SourcegraphGraphQLAPIClient {
             CURRENT_SITE_GRAPHQL_FIELDS_QUERY,
             {}
         ).then(response =>
-            extractDataOrError(
-                response,
-                data => !!data.__type?.fields?.find(field => field.name === 'isCodyEnabled')
-            )
+            extractDataOrError(response, data => !!data.__type?.fields?.find(field => field.name === 'isCodyEnabled'))
         )
     }
 
@@ -366,62 +314,36 @@ export class SourcegraphGraphQLAPIClient {
     }
 
     public async getCurrentUserId(): Promise<string | Error> {
-        return this.fetchSourcegraphAPI<APIResponse<CurrentUserIdResponse>>(
-            CURRENT_USER_ID_QUERY,
-            {}
-        ).then(response =>
+        return this.fetchSourcegraphAPI<APIResponse<CurrentUserIdResponse>>(CURRENT_USER_ID_QUERY, {}).then(response =>
             extractDataOrError(response, data =>
                 data.currentUser ? data.currentUser.id : new Error('current user not found')
             )
         )
     }
 
-    public async getCurrentUserCodyProEnabled(): Promise<{ codyProEnabled: boolean } | Error> {
-        return this.fetchSourcegraphAPI<APIResponse<CurrentUserCodyProEnabledResponse>>(
-            CURRENT_USER_CODY_PRO_ENABLED_QUERY,
+    public async getCurrentUserIdAndVerifiedEmail(): Promise<{ id: string; hasVerifiedEmail: boolean } | Error> {
+        return this.fetchSourcegraphAPI<APIResponse<CurrentUserIdHasVerifiedEmailResponse>>(
+            CURRENT_USER_ID_AND_VERIFIED_EMAIL_QUERY,
             {}
         ).then(response =>
             extractDataOrError(response, data =>
-                data.currentUser ? { ...data.currentUser } : new Error('current user not found')
+                data.currentUser ? { ...data.currentUser } : new Error('current user not found with verified email')
             )
         )
     }
 
-    public async getCurrentUserCodySubscription(): Promise<CurrentUserCodySubscription | Error> {
-        return this.fetchSourcegraphAPI<APIResponse<CurrentUserCodySubscriptionResponse>>(
-            CURRENT_USER_CODY_SUBSCRIPTION_QUERY,
+    public async getCurrentUserIdAndVerifiedEmailAndCodyPro(): Promise<
+        { id: string; hasVerifiedEmail: boolean; codyProEnabled: boolean } | Error
+    > {
+        return this.fetchSourcegraphAPI<APIResponse<CurrentUserIdHasVerifiedEmailHasCodyProResponse>>(
+            CURRENT_USER_ID_AND_VERIFIED_EMAIL_AND_CODY_PRO_QUERY,
             {}
         ).then(response =>
             extractDataOrError(response, data =>
-                data.currentUser?.codySubscription
-                    ? data.currentUser.codySubscription
-                    : new Error('current user subscription data not found')
+                data.currentUser
+                    ? { ...data.currentUser }
+                    : new Error('current user not found with verified email and cody pro')
             )
-        )
-    }
-
-    public async getCurrentUserInfo(): Promise<CurrentUserInfo | Error> {
-        return this.fetchSourcegraphAPI<APIResponse<CurrentUserInfoResponse>>(
-            CURRENT_USER_INFO_QUERY,
-            {}
-        ).then(response =>
-            extractDataOrError(response, data =>
-                data.currentUser ? { ...data.currentUser } : new Error('current user not found')
-            )
-        )
-    }
-
-    /**
-     * Fetches the Site Admin enabled/disable Cody config features for the current instance.
-     */
-    public async getCodyConfigFeatures(): Promise<CodyConfigFeatures | Error> {
-        const response = await this.fetchSourcegraphAPI<APIResponse<CodyConfigFeaturesResponse>>(
-            CURRENT_SITE_CODY_CONFIG_FEATURES,
-            {}
-        )
-        return extractDataOrError(
-            response,
-            data => data.site?.codyConfigFeatures ?? new Error('cody config not found')
         )
     }
 
@@ -436,19 +358,13 @@ export class SourcegraphGraphQLAPIClient {
             ),
         ])
 
-        const config = extractDataOrError(
-            configResponse,
-            data => data.site?.codyLLMConfiguration || undefined
-        )
+        const config = extractDataOrError(configResponse, data => data.site?.codyLLMConfiguration || undefined)
         if (!config || isError(config)) {
             return config
         }
 
         let provider: string | undefined
-        const llmProvider = extractDataOrError(
-            providerResponse,
-            data => data.site?.codyLLMConfiguration?.provider
-        )
+        const llmProvider = extractDataOrError(providerResponse, data => data.site?.codyLLMConfiguration?.provider)
         if (llmProvider && !isError(llmProvider)) {
             provider = llmProvider
         }
@@ -456,62 +372,37 @@ export class SourcegraphGraphQLAPIClient {
         return { ...config, provider }
     }
 
-    /**
-     * Gets a subset of the list of repositories from the Sourcegraph instance.
-     * @param first the number of repositories to retrieve.
-     * @param after the last repository retrieved, if any, to continue enumerating the list.
-     * @returns the list of repositories. If `endCursor` is null, this is the end of the list.
-     */
-    public async getRepoList(first: number, after?: string): Promise<RepoListResponse | Error> {
-        return this.fetchSourcegraphAPI<APIResponse<RepoListResponse>>(REPOSITORY_LIST_QUERY, {
-            first,
-            after: after || null,
-        }).then(response => extractDataOrError(response, data => data))
+    public async getRepoIds(names: string[]): Promise<{ id: string; name: string }[] | Error> {
+        return this.fetchSourcegraphAPI<APIResponse<RepositoryIdsResponse>>(REPOSITORY_IDS_QUERY, {
+            names,
+            first: names.length,
+        }).then(response => extractDataOrError(response, data => data.repositories?.nodes))
     }
 
     public async getRepoId(repoName: string): Promise<string | null | Error> {
         return this.fetchSourcegraphAPI<APIResponse<RepositoryIdResponse>>(REPOSITORY_ID_QUERY, {
             name: repoName,
-        }).then(response =>
-            extractDataOrError(response, data => (data.repository ? data.repository.id : null))
+        }).then(response => extractDataOrError(response, data => (data.repository ? data.repository.id : null)))
+    }
+
+    public async getRepoNames(first: number): Promise<string[] | Error> {
+        return this.fetchSourcegraphAPI<APIResponse<RepositoryNamesResponse>>(REPOSITORY_NAMES_QUERY, { first }).then(
+            response =>
+                extractDataOrError(
+                    response,
+                    data => data?.repositories?.nodes?.map((node: { id: string; name: string }) => node?.name) || []
+                )
         )
     }
 
-    public async getRepoIds(
-        names: string[],
-        first: number
-    ): Promise<{ name: string; id: string }[] | Error> {
-        return this.fetchSourcegraphAPI<APIResponse<RepositoryIdsResponse>>(REPOSITORY_IDS_QUERY, {
-            names,
-            first,
-        }).then(response => extractDataOrError(response, data => data.repositories?.nodes || []))
-    }
-
-    public async contextSearch(
-        repos: Set<string>,
-        query: string
-    ): Promise<ContextSearchResult[] | null | Error> {
-        return this.fetchSourcegraphAPI<APIResponse<ContextSearchResponse>>(CONTEXT_SEARCH_QUERY, {
-            repos: [...repos],
-            query,
-            codeResultsCount: 15,
-            textResultsCount: 5,
-        }).then(response =>
-            extractDataOrError(response, data =>
-                (data.getCodyContext || []).map(item => ({
-                    commit: item.blob.commit.oid,
-                    repoName: item.blob.repository.name,
-                    path: item.blob.path,
-                    uri: URI.parse(
-                        `${item.blob.url.startsWith('/') ? this.endpoint : ''}${item.blob.url}?L${
-                            item.startLine + 1
-                        }-${item.endLine}`
-                    ),
-                    startLine: item.startLine,
-                    endLine: item.endLine,
-                    content: item.chunkContent,
-                }))
-            )
+    public async getRepoIdIfEmbeddingExists(repoName: string): Promise<string | null | Error> {
+        return this.fetchSourcegraphAPI<APIResponse<RepositoryEmbeddingExistsResponse>>(
+            REPOSITORY_EMBEDDING_EXISTS_QUERY,
+            {
+                name: repoName,
+            }
+        ).then(response =>
+            extractDataOrError(response, data => (data.repository?.embeddingExists ? data.repository.id : null))
         )
     }
 
@@ -555,23 +446,17 @@ export class SourcegraphGraphQLAPIClient {
 
     /**
      * recordTelemetryEvents uses the new Telemetry API to record events that
-     * gets exported: https://sourcegraph.com/docs/dev/background-information/telemetry
+     * gets exported: https://docs.sourcegraph.com/dev/background-information/telemetry
      *
      * Only available on Sourcegraph 5.2.0 and later.
      *
      * DO NOT USE THIS DIRECTLY - use an implementation of implementation
      * TelemetryRecorder from '@sourcegraph/telemetry' instead.
      */
-    public async recordTelemetryEvents(events: TelemetryEventInput[]): Promise<unknown | Error> {
-        for (const event of events) {
-            this.anonymizeTelemetryEventInput(event)
-        }
-        const initialResponse = await this.fetchSourcegraphAPI<APIResponse<unknown>>(
-            RECORD_TELEMETRY_EVENTS_MUTATION,
-            {
-                events,
-            }
-        )
+    public async recordTelemetryEvents(events: TelemetryEventInput[]): Promise<{} | Error> {
+        const initialResponse = await this.fetchSourcegraphAPI<APIResponse<{}>>(RECORD_TELEMETRY_EVENTS_MUTATION, {
+            events,
+        })
         return extractDataOrError(initialResponse, data => data)
     }
 
@@ -595,26 +480,6 @@ export class SourcegraphGraphQLAPIClient {
             return this.sendEventLogRequestToAPI(event)
         }
 
-        switch (process.env.CODY_LOG_EVENT_MODE) {
-            case 'connected-instance-only':
-                mode = 'connected-instance-only'
-                break
-            case 'dotcom-only':
-                mode = 'dotcom-only'
-                break
-            case 'all':
-                mode = 'all'
-                break
-            default:
-                if (process.env.CODY_LOG_EVENT_MODE) {
-                    logDebug(
-                        'SourcegraphGraphQLAPIClient.logEvent',
-                        'unknown mode',
-                        process.env.CODY_LOG_EVENT_MODE
-                    )
-                }
-        }
-
         switch (mode) {
             /**
              * Only log events to dotcom, not the connected instance. Used when
@@ -628,7 +493,7 @@ export class SourcegraphGraphQLAPIClient {
              * Only log events to the connected instance, not dotcom. Used when
              * another mechanism handles reporting to dotcom (i.e. the old
              * client and/or the new telemetry framework, which exports events
-             * from all instances: https://sourcegraph.com/docs/dev/background-information/telemetry)
+             * from all instances: https://docs.sourcegraph.com/dev/background-information/telemetry)
              */
             case 'connected-instance-only':
                 return this.sendEventLogRequestToAPI(event)
@@ -644,9 +509,7 @@ export class SourcegraphGraphQLAPIClient {
             this.sendEventLogRequestToDotComAPI(event),
         ])
         if (isError(responses[0]) && isError(responses[1])) {
-            return new Error(
-                `Errors logging events: ${responses[0].toString()}, ${responses[1].toString()}`
-            )
+            return new Error('Errors logging events: ' + responses[0].toString() + ', ' + responses[1].toString())
         }
         if (isError(responses[0])) {
             return responses[0]
@@ -657,41 +520,13 @@ export class SourcegraphGraphQLAPIClient {
         return {}
     }
 
-    private anonymizeTelemetryEventInput(event: TelemetryEventInput): void {
-        if (isAgentTesting) {
-            event.timestamp = undefined
-            event.parameters.interactionID = undefined
-            event.parameters.billingMetadata = undefined
-            event.parameters.metadata = undefined
-            event.parameters.metadata = undefined
-            event.parameters.privateMetadata = {}
-        }
-    }
-
-    private anonymizeEvent(event: event): void {
-        if (isAgentTesting) {
-            event.publicArgument = undefined
-            event.argument = undefined
-            event.userCookieID = 'ANONYMOUS_USER_COOKIE_ID'
-            event.hashedLicenseKey = undefined
-        }
-    }
-
     private async sendEventLogRequestToDotComAPI(event: event): Promise<LogEventResponse | Error> {
-        this.anonymizeEvent(event)
-        const response = await this.fetchSourcegraphDotcomAPI<APIResponse<LogEventResponse>>(
-            LOG_EVENT_MUTATION,
-            event
-        )
+        const response = await this.fetchSourcegraphDotcomAPI<APIResponse<LogEventResponse>>(LOG_EVENT_MUTATION, event)
         return extractDataOrError(response, data => data)
     }
 
     private async sendEventLogRequestToAPI(event: event): Promise<LogEventResponse | Error> {
-        this.anonymizeEvent(event)
-        const initialResponse = await this.fetchSourcegraphAPI<APIResponse<LogEventResponse>>(
-            LOG_EVENT_MUTATION,
-            event
-        )
+        const initialResponse = await this.fetchSourcegraphAPI<APIResponse<LogEventResponse>>(LOG_EVENT_MUTATION, event)
         const initialDataOrError = extractDataOrError(initialResponse, data => data)
 
         if (isError(initialDataOrError)) {
@@ -706,55 +541,94 @@ export class SourcegraphGraphQLAPIClient {
     }
 
     private async sendEventLogRequestToTestingAPI(event: event): Promise<LogEventResponse | Error> {
-        const initialResponse =
-            await this.fetchSourcegraphTestingAPI<APIResponse<LogEventResponse>>(event)
+        const initialResponse = await this.fetchSourcegraphTestingAPI<APIResponse<LogEventResponse>>(event)
         const initialDataOrError = extractDataOrError(initialResponse, data => data)
 
         if (isError(initialDataOrError)) {
-            const secondResponse =
-                await this.fetchSourcegraphTestingAPI<APIResponse<LogEventResponse>>(event)
+            const secondResponse = await this.fetchSourcegraphTestingAPI<APIResponse<LogEventResponse>>(event)
             return extractDataOrError(secondResponse, data => data)
         }
 
         return initialDataOrError
     }
 
+    public async getCodyContext(
+        repos: string[],
+        query: string,
+        codeResultsCount: number,
+        textResultsCount: number
+    ): Promise<GetCodyContextResult[] | Error> {
+        return this.fetchSourcegraphAPI<APIResponse<GetCodyContextResponse>>(GET_CODY_CONTEXT_QUERY, {
+            repos,
+            query,
+            codeResultsCount,
+            textResultsCount,
+        }).then(response => extractDataOrError(response, data => data.getCodyContext))
+    }
+
+    public async searchEmbeddings(
+        repos: string[],
+        query: string,
+        codeResultsCount: number,
+        textResultsCount: number
+    ): Promise<EmbeddingsSearchResults | Error> {
+        return this.fetchSourcegraphAPI<APIResponse<EmbeddingsMultiSearchResponse>>(SEARCH_EMBEDDINGS_QUERY, {
+            repos,
+            query,
+            codeResultsCount,
+            textResultsCount,
+        }).then(response => extractDataOrError(response, data => data.embeddingsMultiSearch))
+    }
+
+    // (Naman): This is a temporary workaround for supporting vscode cody integrated with older version of sourcegraph which do not support the latest searchEmbeddings query.
+    public async legacySearchEmbeddings(
+        repo: string,
+        query: string,
+        codeResultsCount: number,
+        textResultsCount: number
+    ): Promise<EmbeddingsSearchResults | Error> {
+        return this.fetchSourcegraphAPI<APIResponse<EmbeddingsSearchResponse>>(LEGACY_SEARCH_EMBEDDINGS_QUERY, {
+            repo,
+            query,
+            codeResultsCount,
+            textResultsCount,
+        }).then(response => extractDataOrError(response, data => data.embeddingsSearch))
+    }
+
     public async searchAttribution(snippet: string): Promise<SearchAttributionResults | Error> {
-        return this.fetchSourcegraphAPI<APIResponse<SearchAttributionResponse>>(
-            SEARCH_ATTRIBUTION_QUERY,
-            {
-                snippet,
-            }
-        ).then(response => extractDataOrError(response, data => data.snippetAttribution))
+        return this.fetchSourcegraphAPI<APIResponse<SearchAttributionResponse>>(SEARCH_ATTRIBUTION_QUERY, {
+            snippet,
+        }).then(response => extractDataOrError(response, data => data.snippetAttribution))
+    }
+
+    public async isContextRequiredForQuery(query: string): Promise<boolean | Error> {
+        return this.fetchSourcegraphAPI<APIResponse<IsContextRequiredForChatQueryResponse>>(IS_CONTEXT_REQUIRED_QUERY, {
+            query,
+        }).then(response => extractDataOrError(response, data => data.isContextRequiredForChatQuery))
     }
 
     public async getEvaluatedFeatureFlags(): Promise<Record<string, boolean> | Error> {
-        return this.fetchSourcegraphAPI<APIResponse<EvaluatedFeatureFlagsResponse>>(
-            GET_FEATURE_FLAGS_QUERY,
-            {}
-        ).then(response =>
-            extractDataOrError(response, data =>
-                data.evaluatedFeatureFlags.reduce((acc: Record<string, boolean>, { name, value }) => {
-                    acc[name] = value
-                    return acc
-                }, {})
-            )
+        return this.fetchSourcegraphAPI<APIResponse<EvaluatedFeatureFlagsResponse>>(GET_FEATURE_FLAGS_QUERY, {}).then(
+            response =>
+                extractDataOrError(response, data =>
+                    data.evaluatedFeatureFlags.reduce(
+                        (acc, { name, value }) => {
+                            acc[name] = value
+                            return acc
+                        },
+                        {} as Record<string, boolean>
+                    )
+                )
         )
     }
 
     public async evaluateFeatureFlag(flagName: string): Promise<boolean | null | Error> {
-        return this.fetchSourcegraphAPI<APIResponse<EvaluateFeatureFlagResponse>>(
-            EVALUATE_FEATURE_FLAG_QUERY,
-            {
-                flagName,
-            }
-        ).then(response => extractDataOrError(response, data => data.evaluateFeatureFlag))
+        return this.fetchSourcegraphAPI<APIResponse<EvaluateFeatureFlagResponse>>(EVALUATE_FEATURE_FLAG_QUERY, {
+            flagName,
+        }).then(response => extractDataOrError(response, data => data.evaluateFeatureFlag))
     }
 
-    private fetchSourcegraphAPI<T>(
-        query: string,
-        variables: Record<string, any> = {}
-    ): Promise<T | Error> {
+    private fetchSourcegraphAPI<T>(query: string, variables: Record<string, any> = {}): Promise<T | Error> {
         const headers = new Headers(this.config.customHeaders as HeadersInit)
         headers.set('Content-Type', 'application/json; charset=utf-8')
         if (this.config.accessToken) {
@@ -762,25 +636,22 @@ export class SourcegraphGraphQLAPIClient {
         } else if (this.anonymousUserID) {
             headers.set('X-Sourcegraph-Actor-Anonymous-UID', this.anonymousUserID)
         }
-
-        addTraceparent(headers)
+        const traceparent = getTraceparent()
+        if (traceparent) {
+            headers.set('traceparent', traceparent)
+        }
         addCustomUserAgent(headers)
 
         const queryName = query.match(QUERY_TO_NAME_REGEXP)?.[1]
 
         const url = buildGraphQLUrl({ request: query, baseUrl: this.config.serverEndpoint })
-        return wrapInActiveSpan(`graphql.fetch${queryName ? `.${queryName}` : ''}`, () =>
+        return startAsyncSpan(`graphql.fetch${queryName ? `.${queryName}` : ''}`, () =>
             fetch(url, {
                 method: 'POST',
                 body: JSON.stringify({ query, variables }),
                 headers,
             })
                 .then(verifyResponseCode)
-                //.then(response => response.text())
-                //.then(text => {
-                //    console.log('fetched:', text)
-                //    return JSON.parse(text) as T
-                //})
                 .then(response => response.json() as T)
                 .catch(error => {
                     return new Error(`accessing Sourcegraph GraphQL API: ${error} (${url})`)
@@ -789,18 +660,18 @@ export class SourcegraphGraphQLAPIClient {
     }
 
     // make an anonymous request to the dotcom API
-    private fetchSourcegraphDotcomAPI<T>(
-        query: string,
-        variables: Record<string, any>
-    ): Promise<T | Error> {
+    private fetchSourcegraphDotcomAPI<T>(query: string, variables: Record<string, any>): Promise<T | Error> {
         const url = buildGraphQLUrl({ request: query, baseUrl: this.dotcomUrl.href })
         const headers = new Headers()
         addCustomUserAgent(headers)
-        addTraceparent(headers)
+        const traceparent = getTraceparent()
+        if (traceparent) {
+            headers.set('traceparent', traceparent)
+        }
 
         const queryName = query.match(QUERY_TO_NAME_REGEXP)?.[1]
 
-        return wrapInActiveSpan(`graphql.dotcom.fetch${queryName ? `.${queryName}` : ''}`, () =>
+        return startAsyncSpan(`graphql.dotcom.fetch${queryName ? `.${queryName}` : ''}`, () =>
             fetch(url, {
                 method: 'POST',
                 body: JSON.stringify({ query, variables }),
@@ -837,69 +708,6 @@ export class SourcegraphGraphQLAPIClient {
  */
 export const graphqlClient = new SourcegraphGraphQLAPIClient()
 
-/**
- * ConfigFeaturesSingleton is a class that manages the retrieval
- * and caching of configuration features from GraphQL endpoints.
- */
-export class ConfigFeaturesSingleton {
-    private static instance: ConfigFeaturesSingleton
-    private configFeatures: Promise<CodyConfigFeatures>
-
-    // Constructor is private to prevent creating new instances outside of the class
-    private constructor() {
-        // Initialize with default values
-        this.configFeatures = Promise.resolve({
-            chat: true,
-            autoComplete: true,
-            commands: true,
-            attribution: false,
-        })
-        // Initiate the first fetch and set up a recurring fetch every 30 seconds
-        this.refreshConfigFeatures()
-        // Fetch config features periodically every 30 seconds only if isDotCom is false
-        if (!graphqlClient.isDotCom()) {
-            setInterval(() => this.refreshConfigFeatures(), 30000)
-        }
-    }
-
-    // Static method to get the singleton instance
-    public static getInstance(): ConfigFeaturesSingleton {
-        if (!ConfigFeaturesSingleton.instance) {
-            ConfigFeaturesSingleton.instance = new ConfigFeaturesSingleton()
-        }
-        return ConfigFeaturesSingleton.instance
-    }
-
-    // Refreshes the config features by fetching them from the server and caching the result
-    private refreshConfigFeatures(): void {
-        const previousConfigFeatures = this.configFeatures
-        this.configFeatures = this.fetchConfigFeatures().catch((error: Error) => {
-            // Ignore a fetcherror as older SG instances will always face this because their GQL is outdated
-            if (!error.message.includes('FetchError')) {
-                logError('ConfigFeaturesSingleton', 'refreshConfigFeatures', error.message)
-            }
-            // In case of an error, return previously fetched value
-            return previousConfigFeatures
-        })
-    }
-
-    public getConfigFeatures(): Promise<CodyConfigFeatures> {
-        return this.configFeatures
-    }
-
-    // Fetches the config features from the server and handles errors
-    private async fetchConfigFeatures(): Promise<CodyConfigFeatures> {
-        // Execute the GraphQL query to fetch the configuration features
-        const features = await graphqlClient.getCodyConfigFeatures()
-        if (features instanceof Error) {
-            // If there's an error, throw it to be caught in refreshConfigFeatures
-            throw features
-        }
-        // If the fetch is successful, store the fetched configuration features
-        return features
-    }
-}
-
 async function verifyResponseCode(response: Response): Promise<Response> {
     if (!response.ok) {
         const body = await response.text()
@@ -907,6 +715,9 @@ async function verifyResponseCode(response: Response): Promise<Response> {
     }
     return response
 }
+
+class RepoNotFoundError extends Error {}
+export const isRepoNotFoundError = (value: unknown): value is RepoNotFoundError => value instanceof RepoNotFoundError
 
 export type LogEventMode =
     | 'dotcom-only' // only log to dotcom

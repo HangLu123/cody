@@ -1,7 +1,9 @@
-import type * as vscode from 'vscode'
+import * as vscode from 'vscode'
 
-import type { FixupFile } from './FixupFile'
-import type { FixupTask } from './FixupTask'
+import { FixupIntent } from '@sourcegraph/cody-shared/src/editor'
+
+import { FixupFile } from './FixupFile'
+import { FixupTask } from './FixupTask'
 
 // Role interfaces so that sub-objects of the FixupController can consume a
 // narrow part of the controller.
@@ -29,11 +31,22 @@ export interface FixupIdleTaskRunner {
 }
 
 /**
+ * Creates and starts processing a task.
+ */
+export interface FixupTaskFactory {
+    createTask(
+        documentUri: vscode.Uri,
+        instruction: string,
+        selectionRange: vscode.Range,
+        intent?: FixupIntent
+    ): FixupTask
+}
+
+/**
  * Sink for notifications that text related to the fixup task--either the text
  * in the file, or the text provided by Cody--has changed.
  */
 export interface FixupTextChanged {
     textDidChange(task: FixupTask): void
     rangeDidChange(task: FixupTask): void
-    cancelTask(task: FixupTask): void
 }

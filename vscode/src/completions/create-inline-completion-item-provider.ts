@@ -1,45 +1,26 @@
 import * as vscode from 'vscode'
 
-import {
-    isDotCom,
-    type CodeCompletionsClient,
-    type ConfigurationWithAccessToken,
-    featureFlagProvider,
-} from '@sourcegraph/cody-shared'
+import { Configuration } from '@sourcegraph/cody-shared/src/configuration'
+import { FeatureFlag, featureFlagProvider } from '@sourcegraph/cody-shared/src/experimentation/FeatureFlagProvider'
 
 import { logDebug } from '../log'
 import type { AuthProvider } from '../services/AuthProvider'
-import type { CodyStatusBar } from '../services/StatusBar'
+import { CodyStatusBar } from '../services/StatusBar'
 
+import { CodeCompletionsClient } from './client'
+import { ContextStrategy } from './context/context-strategy'
 import type { BfgRetriever } from './context/retrievers/bfg/bfg-retriever'
 import { InlineCompletionItemProvider } from './inline-completion-item-provider'
-import { createProviderConfig } from './providers/create-provider'
+import { createProviderConfig } from './providers/createProvider'
 import { registerAutocompleteTraceView } from './tracer/traceView'
-import { completionProviderConfig } from './completion-provider-config'
 
 interface InlineCompletionItemProviderArgs {
-    config: ConfigurationWithAccessToken
+    config: Configuration
     client: CodeCompletionsClient
     statusBar: CodyStatusBar
     authProvider: AuthProvider
     triggerNotice: ((notice: { key: string }) => void) | null
     createBfgRetriever?: () => BfgRetriever
-}
-
-/**
- * Inline completion item providers that always returns an empty reply.
- * Implemented as a class instead of anonymous function so that you can identify
- * it with `console.log()` debugging.
- */
-class NoopCompletionItemProvider implements vscode.InlineCompletionItemProvider {
-    public provideInlineCompletionItems(
-        _document: vscode.TextDocument,
-        _position: vscode.Position,
-        _context: vscode.InlineCompletionContext,
-        _token: vscode.CancellationToken
-    ): vscode.ProviderResult<vscode.InlineCompletionItem[] | vscode.InlineCompletionList> {
-        return { items: [] }
-    }
 }
 
 export async function createInlineCompletionItemProvider({
@@ -50,18 +31,16 @@ export async function createInlineCompletionItemProvider({
     triggerNotice,
     createBfgRetriever,
 }: InlineCompletionItemProviderArgs): Promise<vscode.Disposable> {
-    const authStatus = authProvider.getAuthStatus()
-    if (!authStatus.isLoggedIn) {
+    if (!authProvider.getAuthStatus().isLoggedIn) {
         logDebug('CodyCompletionProvider:notSignedIn', 'You are not signed in.')
 
         if (config.isRunningInsideAgent) {
             // Register an empty completion provider when running inside the
             // agent to avoid timeouts because it awaits for an
             // `InlineCompletionItemProvider` to be registered.
-            return vscode.languages.registerInlineCompletionItemProvider(
-                '*',
-                new NoopCompletionItemProvider()
-            )
+            return vscode.languages.registerInlineCompletionItemProvider('*', {
+                provideInlineCompletionItems: () => Promise.resolve({ items: [] }),
+            })
         }
 
         return {
@@ -71,28 +50,59 @@ export async function createInlineCompletionItemProvider({
 
     const disposables: vscode.Disposable[] = []
 
-    const [providerConfig] = await Promise.all([
-        createProviderConfig(config, client, authStatus),
-        completionProviderConfig.init(config, featureFlagProvider),
+    const [
+        providerConfig,
+        lspLightContextFlag,
+        bfgContextFlag,
+        bfgMixedContextFlag,
+        localMixedContextFlag,
+        disableRecyclingOfPreviousRequests,
+        dynamicMultlilineCompletionsFlag,
+    ] = await Promise.all([
+        createProviderConfig(config, client, authProvider.getAuthStatus().configOverwrites),
+        featureFlagProvider.evaluateFeatureFlag(FeatureFlag.CodyAutocompleteContextLspLight),
+        featureFlagProvider.evaluateFeatureFlag(FeatureFlag.CodyAutocompleteContextBfg),
+        featureFlagProvider.evaluateFeatureFlag(FeatureFlag.CodyAutocompleteContextBfgMixed),
+        featureFlagProvider.evaluateFeatureFlag(FeatureFlag.CodyAutocompleteContextLocalMixed),
+        featureFlagProvider.evaluateFeatureFlag(FeatureFlag.CodyAutocompleteDisableRecyclingOfPreviousRequests),
+        featureFlagProvider.evaluateFeatureFlag(FeatureFlag.CodyAutocompleteDynamicMultilineCompletions),
     ])
-
     if (providerConfig) {
-        const authStatus = authProvider.getAuthStatus()
+        const contextStrategy: ContextStrategy =
+            config.autocompleteExperimentalGraphContext === 'lsp-light'
+                ? 'lsp-light'
+                : config.autocompleteExperimentalGraphContext === 'bfg'
+                ? 'bfg'
+                : config.autocompleteExperimentalGraphContext === 'bfg-mixed'
+                ? 'bfg-mixed'
+                : lspLightContextFlag
+                ? 'lsp-light'
+                : bfgContextFlag
+                ? 'bfg'
+                : bfgMixedContextFlag
+                ? 'bfg-mixed'
+                : localMixedContextFlag
+                ? 'local-mixed'
+                : 'jaccard-similarity'
+
+        const dynamicMultlilineCompletions =
+            config.autocompleteExperimentalDynamicMultilineCompletions || dynamicMultlilineCompletionsFlag
+
         const completionsProvider = new InlineCompletionItemProvider({
-            authStatus,
             providerConfig,
+            featureFlagProvider,
+            authProvider,
             statusBar,
             completeSuggestWidgetSelection: config.autocompleteCompleteSuggestWidgetSelection,
-            formatOnAccept: config.autocompleteFormatOnAccept,
+            disableRecyclingOfPreviousRequests,
             triggerNotice,
             isRunningInsideAgent: config.isRunningInsideAgent,
+            contextStrategy,
             createBfgRetriever,
-            isDotComUser: isDotCom(authStatus.endpoint || ''),
+            dynamicMultlilineCompletions,
         })
 
-        const documentFilters = await getInlineCompletionItemProviderFilters(
-            config.autocompleteLanguages
-        )
+        const documentFilters = await getInlineCompletionItemProviderFilters(config.autocompleteLanguages)
 
         disposables.push(
             vscode.commands.registerCommand('cody.autocomplete.manual-trigger', () =>
@@ -107,11 +117,10 @@ export async function createInlineCompletionItemProvider({
         )
     } else if (config.isRunningInsideAgent) {
         throw new Error(
-            `Can't register completion provider because \`providerConfig\` evaluated to \`null\`. To fix this problem, debug why createProviderConfig returned null instead of ProviderConfig. To further debug this problem, here is the configuration:\n${JSON.stringify(
-                config,
-                null,
-                2
-            )}`
+            "Can't register completion provider because `providerConfig` evaluated to `null`. " +
+                'To fix this problem, debug why createProviderConfig returned null instead of ProviderConfig. ' +
+                'To further debug this problem, here is the configuration:\n' +
+                JSON.stringify(config, null, 2)
         )
     }
 
@@ -124,13 +133,6 @@ export async function createInlineCompletionItemProvider({
     }
 }
 
-// Languages which should be disabled, but they are not present in
-// https://code.visualstudio.com/docs/languages/identifiers#_known-language-identifiers
-// But they exist in the `vscode.languages.getLanguages()` return value.
-//
-// To avoid confusing users with unknown language IDs, we disable them here programmatically.
-const DISABLED_LANGUAGES = new Set(['scminput'])
-
 export async function getInlineCompletionItemProviderFilters(
     autocompleteLanguages: Record<string, boolean>
 ): Promise<vscode.DocumentFilter[]> {
@@ -138,10 +140,7 @@ export async function getInlineCompletionItemProviderFilters(
     const languageIds = await vscode.languages.getLanguages()
 
     return languageIds.flatMap(language => {
-        const enabled =
-            !DISABLED_LANGUAGES.has(language) && language in perLanguageConfig
-                ? perLanguageConfig[language]
-                : isEnabledForAll
+        const enabled = language in perLanguageConfig ? perLanguageConfig[language] : isEnabledForAll
 
         return enabled ? [{ language, scheme: 'file' }] : []
     })

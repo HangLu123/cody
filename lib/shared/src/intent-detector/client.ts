@@ -1,18 +1,21 @@
 import { ANSWER_TOKENS } from '../prompt/constants'
-import type { Message } from '../sourcegraph-api'
-import type { SourcegraphCompletionsClient } from '../sourcegraph-api/completions/client'
+import { Message } from '../sourcegraph-api'
+import { SourcegraphCompletionsClient } from '../sourcegraph-api/completions/client'
+import { SourcegraphGraphQLAPIClient } from '../sourcegraph-api/graphql'
 
-import type { IntentClassificationOption, IntentDetector } from '.'
+import { IntentClassificationOption, IntentDetector } from '.'
 
-const editorRegexps = [
-    /editor/,
-    /(open|current|this|entire)\s+file/,
-    /current(ly)?\s+open/,
-    /have\s+open/,
-]
+const editorRegexps = [/editor/, /(open|current|this|entire)\s+file/, /current(ly)?\s+open/, /have\s+open/]
 
 export class SourcegraphIntentDetectorClient implements IntentDetector {
-    constructor(private completionsClient?: SourcegraphCompletionsClient) {}
+    constructor(
+        private client: SourcegraphGraphQLAPIClient,
+        private completionsClient?: SourcegraphCompletionsClient
+    ) {}
+
+    public isCodebaseContextRequired(input: string): Promise<boolean | Error> {
+        return this.client.isContextRequiredForQuery(input)
+    }
 
     public isEditorContextRequired(input: string): boolean | Error {
         const inputLowerCase = input.toLowerCase()
@@ -82,39 +85,41 @@ export class SourcegraphIntentDetectorClient implements IntentDetector {
         const preamble = this.buildInitialTranscript(options)
         const examples = this.buildExampleTranscript(options)
 
-        let result = ''
-        const stream = completionsClient.stream({
-            fast: true,
-            temperature: 0,
-            maxTokensToSample: ANSWER_TOKENS,
-            topK: -1,
-            topP: -1,
-            messages: [
-                ...preamble,
-                ...examples,
+        const result = await new Promise<string>(resolve => {
+            let responseText = ''
+            return completionsClient.stream(
                 {
-                    speaker: 'human',
-                    text: input,
+                    fast: true,
+                    temperature: 0,
+                    maxTokensToSample: ANSWER_TOKENS,
+                    topK: -1,
+                    topP: -1,
+                    messages: [
+                        ...preamble,
+                        ...examples,
+                        {
+                            speaker: 'human',
+                            text: input,
+                        },
+                        {
+                            speaker: 'assistant',
+                        },
+                    ],
                 },
                 {
-                    speaker: 'assistant',
-                },
-            ],
+                    onChange: (text: string) => {
+                        responseText = text
+                    },
+                    onComplete: () => {
+                        resolve(responseText)
+                    },
+                    onError: (message: string, statusCode?: number) => {
+                        console.error(`Error detecting intent: Status code ${statusCode}: ${message}`)
+                        resolve(fallback)
+                    },
+                }
+            )
         })
-        for await (const message of stream) {
-            switch (message.type) {
-                case 'change': {
-                    result = message.text
-                    break
-                }
-                case 'error': {
-                    console.error(
-                        `Error detecting intent: Status code ${message.statusCode}: ${message.error.message}`
-                    )
-                    return fallback
-                }
-            }
-        }
 
         const responseClassification = result.match(/<classification>(.*?)<\/classification>/)?.[1]
         if (!responseClassification) {

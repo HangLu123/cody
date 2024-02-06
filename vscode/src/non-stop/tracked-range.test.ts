@@ -3,12 +3,7 @@ import assert from 'assert'
 import { describe, expect, it } from 'vitest'
 import { Position, Range } from 'vscode'
 
-import {
-    updateFixedRange,
-    updateRange,
-    updateRangeMultipleChanges,
-    type UpdateRangeOptions,
-} from './tracked-range'
+import { updateRange, updateRangeMultipleChanges, UpdateRangeOptions } from './tracked-range'
 
 // Creates a position.
 function pos(line: number, character: number): Position {
@@ -64,10 +59,10 @@ function show(text: string, range: Range): string {
 // whether inserting at () extends the tracked range or not.
 function parse(spec: string): { tracked: Range; edited: Range; text: string } {
     const buffer = []
-    let trackedStart: Position | undefined
-    let trackedEnd: Position | undefined
-    let editedStart: Position | undefined
-    let editedEnd: Position | undefined
+    let trackedStart
+    let trackedEnd
+    let editedStart
+    let editedEnd
     let line = 0
     let beginningOfLine = 0
     let i = 0
@@ -92,7 +87,6 @@ function parse(spec: string): { tracked: Range; edited: Range; text: string } {
                 assert(!editedEnd, 'multiple ending )s')
                 editedEnd = here
                 break
-            // biome-ignore lint/suspicious/noFallthroughSwitchClause: intentional
             case '\n':
                 line++
                 beginningOfLine = i + 1
@@ -103,10 +97,7 @@ function parse(spec: string): { tracked: Range; edited: Range; text: string } {
         }
     }
 
-    assert(
-        trackedStart && trackedEnd && editedStart && editedEnd,
-        'ranges should be specified with [], ()'
-    )
+    assert(trackedStart && trackedEnd && editedStart && editedEnd, 'ranges should be specified with [], ()')
 
     return {
         tracked: rng(trackedStart, trackedEnd),
@@ -143,11 +134,7 @@ function edit(text: string, range: Range, replacement: string): string {
 function track(spec: string, replacement: string, options?: UpdateRangeOptions): string {
     const scenario = parse(spec)
     const editedText = edit(scenario.text, scenario.edited, replacement)
-    const updatedRange = updateRange(
-        scenario.tracked,
-        { range: scenario.edited, text: replacement },
-        options
-    )
+    const updatedRange = updateRange(scenario.tracked, { range: scenario.edited, text: replacement }, options)
     return updatedRange ? show(editedText, updatedRange) : editedText
 }
 
@@ -205,9 +192,7 @@ describe('Tracked Range', () => {
         expect(track('[hello(, ]world)!', ' everyone')).toBe('[hello] everyone!')
     })
     it('should the range to the start of the edit, if the edit encompasses the entire range', () => {
-        expect(track('all the (h[ello, ]world) things!', 'woozl wuzl')).toBe(
-            'all the []woozl wuzl things!'
-        )
+        expect(track('all the (h[ello, ]world) things!', 'woozl wuzl')).toBe('all the []woozl wuzl things!')
     })
     it('should track multiline insertions before the range, ending on the same line as the range', () => {
         expect(track('he(llo,\nworld) [is a common\ngreeting]', "y jude,\ndon't be afraid")).toBe(
@@ -215,9 +200,7 @@ describe('Tracked Range', () => {
         )
     })
     it('should track multiline insertions before the range, starting and ending on the same line as the range', () => {
-        expect(track('hello(,) [world]!', ' everybody\naround the')).toBe(
-            'hello everybody\naround the [world]!'
-        )
+        expect(track('hello(,) [world]!', ' everybody\naround the')).toBe('hello everybody\naround the [world]!')
     })
 
     describe('when supporting range affix', () => {
@@ -236,41 +219,6 @@ describe('Tracked Range', () => {
         it('should track single character insertion after the range as a range expansion', () => {
             expect(track('[hell]() world', 'o', { supportRangeAffix: true })).toBe('[hello] world')
         })
-
-        it('should not track whitespace insertion before the range as a range expansion', () => {
-            expect(track('( )[llo] world', '  \n', { supportRangeAffix: true })).toBe('  \n[llo] world')
-        })
-
-        it('should not track whitespace insertion after the range as a range expansion', () => {
-            expect(track('[hello]( )', '  \n', { supportRangeAffix: true })).toBe('[hello]  \n')
-        })
-    })
-})
-
-// Given a spec with a tracked range in [], an edited range in (),
-// replaces () with the specified text; applies range tracking;
-// and serializes the resulting text and tracked range.
-function trackFixed(spec: string, replacement: string): string {
-    const scenario = parse(spec)
-    const editedText = edit(scenario.text, scenario.edited, replacement)
-    const updatedRange = updateFixedRange(scenario.tracked, {
-        range: scenario.edited,
-        text: replacement,
-    })
-    return updatedRange ? show(editedText, updatedRange) : editedText
-}
-
-describe('Tracked Range Fixed', () => {
-    it('should preserve the fixed range for changes before the range', () => {
-        expect(trackFixed('()[hello world]', 'I am here, ')).toBe('[I am here, ]hello world')
-    })
-
-    it('should preserve the fixed range for changes after the range', () => {
-        expect(trackFixed('[hello world]( )', ', I am here')).toBe('[hello world], I am here')
-    })
-
-    it('should preserve the fixed range for changes within the range', () => {
-        expect(trackFixed('[hello ()orld]', 'w')).toBe('[hello worl]d')
     })
 })
 

@@ -7,7 +7,7 @@
       "request": "launch",
       "runtimeExecutable": "${execPath}",
       "preLaunchTask": "Build VS Code Extension (Desktop)",
-      "args": ["--extensionDevelopmentPath=${workspaceRoot}/vscode", "--disable-extension=github.copilot"],
+      "args": ["--extensionDevelopmentPath=${workspaceRoot}/vscode"],
       "sourceMaps": true,
       "outFiles": ["${workspaceRoot}/vscode/dist/**/*.js"],
       "env": {
@@ -26,8 +26,7 @@
       "args": [
         "--user-data-dir=/tmp/vscode-cody-extension-dev-host",
         "--profile-temp",
-        "--extensionDevelopmentPath=${workspaceRoot}/vscode",
-        "--disable-extension=github.copilot"
+        "--extensionDevelopmentPath=${workspaceRoot}/vscode"
       ],
       "sourceMaps": true,
       "outFiles": ["${workspaceRoot}/vscode/dist/**/*.js"],
@@ -48,7 +47,7 @@
     },
     {
       "name": "Launch VS Code Extension (Web Extension Host)",
-      "type": "extensionHost",
+      "type": "pwa-extensionHost",
       "debugWebWorkerHost": true,
       "request": "launch",
       "preLaunchTask": "Build VS Code Extension (Web)",

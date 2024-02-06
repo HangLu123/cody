@@ -1,19 +1,13 @@
+import * as os from 'os'
+import * as path from 'path'
+
 import * as vscode from 'vscode'
 
-import {
-    displayPath,
-    hydrateAfterPostMessage,
-    isDefined,
-    isFileURI,
-    type FileURI,
-    type Result,
-    type SearchPanelFile,
-    type SearchPanelSnippet,
-} from '@sourcegraph/cody-shared'
+import { Result, SearchPanelFile, SearchPanelSnippet } from '@sourcegraph/cody-shared/src/local-context'
 
-import type { ExtensionMessage, WebviewMessage } from '../chat/protocol'
-import { getEditor } from '../editor/active-editor'
-import type { IndexStartEvent, SymfRunner } from '../local-context/symf'
+import { WebviewMessage } from '../chat/protocol'
+import { getActiveEditor } from '../editor/active-editor'
+import { SymfRunner } from '../local-context/symf'
 
 const searchDecorationType = vscode.window.createTextEditorDecorationType({
     backgroundColor: new vscode.ThemeColor('searchEditor.findMatchBackground'),
@@ -42,88 +36,69 @@ class CancellationManager implements vscode.Disposable {
     }
 }
 
-class IndexManager implements vscode.Disposable {
-    private currentlyRefreshing = new Map<string /* uri.toString() */, Promise<void>>()
-    private scopeDirIndexInProgress: Map<string /* uri.toString() */, Promise<void>> = new Map()
-    private disposables: vscode.Disposable[] = []
+class IndexManager {
+    private currentlyRefreshing = new Set<string>()
+    private scopeDirIndexInProgress: Map<string, Promise<void>> = new Map()
 
-    constructor(private symf: SymfRunner) {
-        this.disposables.push(this.symf.onIndexStart(event => this.showIndexProgress(event)))
-    }
-
-    public dispose(): void {
-        vscode.Disposable.from(...this.disposables).dispose()
-    }
+    constructor(private symf: SymfRunner) {}
 
     /**
      * Show a warning message if indexing is already in progress for scopeDirs.
      * This is needed, because the user may have dismissed previous indexing progress
      * messages.
      */
-    public showMessageIfIndexingInProgress(scopeDirs: vscode.Uri[]): void {
-        const indexingScopeDirs: vscode.Uri[] = []
+    public showMessageIfIndexingInProgress = (scopeDirs: string[]): void => {
+        const indexingScopeDirs: string[] = []
         for (const scopeDir of scopeDirs) {
-            if (this.scopeDirIndexInProgress.has(scopeDir.toString())) {
-                indexingScopeDirs.push(scopeDir)
+            if (this.scopeDirIndexInProgress.has(scopeDir)) {
+                const { base, dir, wsName } = getRenderableComponents(scopeDir)
+                const prettyScopeDir = wsName ? path.join(wsName, dir, base) : path.join(dir, base)
+                indexingScopeDirs.push(prettyScopeDir)
             }
         }
         if (indexingScopeDirs.length === 0) {
             return
         }
-        void vscode.window.showWarningMessage(
-            `Still indexing: ${indexingScopeDirs.map(displayPath).join(', ')}`
-        )
+        void vscode.window.showWarningMessage(`Still indexing: ${indexingScopeDirs.join(', ')}`)
     }
 
-    public showIndexProgress({ scopeDir, cancel, done }: IndexStartEvent): void {
-        if (this.scopeDirIndexInProgress.has(scopeDir.toString())) {
-            void vscode.window.showWarningMessage(`Duplicate index request for ${displayPath(scopeDir)}`)
+    public showIndexProgress = (scopeDir: string, indexDone: Promise<void>): void => {
+        const { base, dir, wsName } = getRenderableComponents(scopeDir)
+        const prettyScopeDir = wsName ? path.join(wsName, dir, base) : path.join(dir, base)
+        if (this.scopeDirIndexInProgress.has(scopeDir)) {
+            void vscode.window.showWarningMessage(`Duplicate index request for ${prettyScopeDir}`)
             return
         }
-        this.scopeDirIndexInProgress.set(scopeDir.toString(), done)
-        void done.finally(() => {
-            this.scopeDirIndexInProgress.delete(scopeDir.toString())
+        this.scopeDirIndexInProgress.set(scopeDir, indexDone)
+        void indexDone.finally(() => {
+            this.scopeDirIndexInProgress.delete(scopeDir)
         })
 
         void vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
-                title: `Building Cody search index for ${displayPath(scopeDir)}`,
-                cancellable: true,
+                title: `Cody: building search index for ${prettyScopeDir}`,
+                cancellable: false,
             },
-            async (_progress, token) => {
-                if (token.isCancellationRequested) {
-                    cancel()
-                } else {
-                    token.onCancellationRequested(() => cancel())
-                }
-                await done
+            async () => {
+                await indexDone
             }
         )
     }
 
-    public refreshIndex(scopeDir: FileURI): Promise<void> {
-        const fromCache = this.currentlyRefreshing.get(scopeDir.toString())
-        if (fromCache) {
-            return fromCache
+    public async refreshIndex(scopeDir: string): Promise<void> {
+        if (this.currentlyRefreshing.has(scopeDir)) {
+            return
         }
-        const result = this.forceRefreshIndex(scopeDir)
-        this.currentlyRefreshing.set(scopeDir.toString(), result)
-        return result
-    }
-
-    private async forceRefreshIndex(scopeDir: FileURI): Promise<void> {
         try {
+            this.currentlyRefreshing.add(scopeDir)
+
             await this.symf.deleteIndex(scopeDir)
-            await this.symf.ensureIndex(scopeDir, { hard: true })
+            await this.symf.ensureIndex(scopeDir, this.showIndexProgress, { hard: true })
         } catch (error) {
-            if (!(error instanceof vscode.CancellationError)) {
-                void vscode.window.showErrorMessage(
-                    `Error refreshing search index for ${displayPath(scopeDir)}: ${error}`
-                )
-            }
+            void vscode.window.showErrorMessage(`Error refreshing search index for ${scopeDir}: ${error}`)
         } finally {
-            this.currentlyRefreshing.delete(scopeDir.toString())
+            this.currentlyRefreshing.delete(scopeDir)
         }
     }
 }
@@ -139,7 +114,6 @@ export class SearchViewProvider implements vscode.WebviewViewProvider, vscode.Di
         private symfRunner: SymfRunner
     ) {
         this.indexManager = new IndexManager(this.symfRunner)
-        this.disposables.push(this.indexManager)
         this.disposables.push(this.cancellationManager)
     }
 
@@ -162,38 +136,30 @@ export class SearchViewProvider implements vscode.WebviewViewProvider, vscode.Di
             }),
             vscode.commands.registerCommand('cody.search.index-update-all', async () => {
                 const folders = vscode.workspace.workspaceFolders
-                    ?.map(folder => folder.uri)
-                    .filter(isFileURI)
                 if (!folders) {
                     void vscode.window.showWarningMessage('Open a workspace folder to index')
                     return
                 }
                 for (const folder of folders) {
-                    await this.indexManager.refreshIndex(folder)
+                    await this.indexManager.refreshIndex(folder.uri.fsPath)
                 }
             })
         )
         // Kick off search index creation for all workspace folders
-        if (vscode.workspace.workspaceFolders) {
-            for (const folder of vscode.workspace.workspaceFolders) {
-                if (isFileURI(folder.uri)) {
-                    void this.symfRunner.ensureIndex(folder.uri, { hard: false })
-                }
-            }
-        }
+        vscode.workspace.workspaceFolders?.forEach(folder => {
+            void this.symfRunner.ensureIndex(folder.uri.fsPath, this.indexManager.showIndexProgress, { hard: false })
+        })
         this.disposables.push(
             vscode.workspace.onDidChangeWorkspaceFolders(event => {
-                for (const folder of event.added) {
-                    if (isFileURI(folder.uri)) {
-                        void this.symfRunner.ensureIndex(folder.uri, {
-                            hard: false,
-                        })
-                    }
-                }
+                event.added.forEach(folder => {
+                    void this.symfRunner.ensureIndex(folder.uri.fsPath, this.indexManager.showIndexProgress, {
+                        hard: false,
+                    })
+                })
             })
         )
         this.disposables.push(
-            this.symfRunner.onIndexEnd(({ scopeDir }) => {
+            this.symfRunner.registerIndexListener(scopeDir => {
                 void this.webview?.postMessage({ type: 'index-updated', scopeDir })
             })
         )
@@ -224,13 +190,7 @@ export class SearchViewProvider implements vscode.WebviewViewProvider, vscode.Di
             .replaceAll('{cspSource}', webviewView.webview.cspSource)
 
         // Register to receive messages from webview
-        this.disposables.push(
-            webviewView.webview.onDidReceiveMessage(message =>
-                this.onDidReceiveMessage(
-                    hydrateAfterPostMessage(message, uri => vscode.Uri.from(uri as any))
-                )
-            )
-        )
+        this.disposables.push(webviewView.webview.onDidReceiveMessage(message => this.onDidReceiveMessage(message)))
     }
 
     private async onDidReceiveMessage(message: WebviewMessage): Promise<void> {
@@ -240,7 +200,9 @@ export class SearchViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 break
             }
             case 'show-search-result': {
-                const { range, uri } = message
+                const { range, uriJSON } = message
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const uri = vscode.Uri.from(uriJSON as any)
                 const vscodeRange = new vscode.Range(
                     range.start.line,
                     range.start.character,
@@ -254,14 +216,10 @@ export class SearchViewProvider implements vscode.WebviewViewProvider, vscode.Di
                     selection: vscodeRange,
                     preserveFocus: true,
                 })
-                const isWholeFile =
-                    vscodeRange.start.line === 0 && vscodeRange.end.line === doc.lineCount - 1
+                const isWholeFile = vscodeRange.start.line === 0 && vscodeRange.end.line === doc.lineCount - 1
                 if (!isWholeFile) {
                     editor.setDecorations(searchDecorationType, [vscodeRange])
-                    editor.revealRange(
-                        vscodeRange,
-                        vscode.TextEditorRevealType.InCenterIfOutsideViewport
-                    )
+                    editor.revealRange(vscodeRange, vscode.TextEditorRevealType.InCenterIfOutsideViewport)
                 }
                 break
             }
@@ -293,18 +251,10 @@ export class SearchViewProvider implements vscode.WebviewViewProvider, vscode.Di
             return
         }
 
-        // Update the config. We could do this on a smarter schedule, but this suffices for when the
-        // webview needs it for now.
-        this.webview?.postMessage({
-            type: 'search:config',
-            workspaceFolderUris:
-                vscode.workspace.workspaceFolders?.map(folder => folder.uri.toString()) ?? [],
-        } satisfies ExtensionMessage)
-
         await vscode.window.withProgress({ location: { viewId: 'cody.search' } }, async () => {
             const cumulativeResults: SearchPanelFile[] = []
             this.indexManager.showMessageIfIndexingInProgress(scopeDirs)
-            const resultSets = await symf.getResults(query, scopeDirs)
+            const resultSets = await symf.getResults(query, scopeDirs, this.indexManager.showIndexProgress)
             for (const resultSet of resultSets) {
                 try {
                     cumulativeResults.push(...(await resultsToDisplayResults(await resultSet)))
@@ -314,49 +264,66 @@ export class SearchViewProvider implements vscode.WebviewViewProvider, vscode.Di
                         query,
                     })
                 } catch (error) {
-                    if (error instanceof vscode.CancellationError) {
-                        void vscode.window.showErrorMessage(
-                            'No search results because indexing was canceled'
-                        )
-                    } else {
-                        void vscode.window.showErrorMessage(
-                            `Error fetching results for query "${query}": ${error}`
-                        )
-                    }
+                    void vscode.window.showErrorMessage(`Error fetching results for query, "${query}": ${error}`)
                 }
             }
         })
     }
 }
 
+function getRenderableComponents(filename: string): { base: string; dir: string; wsName?: string } {
+    // get workspace folders
+    const wsFolders = vscode.workspace.workspaceFolders
+    const home = os.homedir()
+
+    const base = path.basename(filename)
+    const absdir = path.dirname(filename)
+
+    if (wsFolders) {
+        for (const wsFolder of wsFolders) {
+            const reldir = path.relative(wsFolder.uri.fsPath, absdir)
+            if (!reldir.startsWith('..')) {
+                return { base, dir: reldir, wsName: wsFolders.length > 1 ? wsFolder.name : undefined }
+            }
+        }
+    }
+
+    // No matches in workspace folders, check home directory
+    const reldir = path.relative(home, absdir)
+    if (!reldir.startsWith('..')) {
+        return { base, dir: reldir }
+    }
+    return { base, dir: absdir }
+}
+
 /**
  * @returns the list of workspace folders to search. The first folder is the active file's folder.
  */
-function getScopeDirs(): FileURI[] {
-    const folders = vscode.workspace.workspaceFolders?.map(f => f.uri).filter(isFileURI)
+function getScopeDirs(): string[] {
+    const folders = vscode.workspace.workspaceFolders
     if (!folders) {
         return []
     }
-    const uri = getEditor().active?.document.uri
+    const uri = getActiveEditor()?.document.uri
     if (!uri) {
-        return folders
+        return folders.map(f => f.uri.fsPath)
     }
     const currentFolder = vscode.workspace.getWorkspaceFolder(uri)
     if (!currentFolder) {
-        return folders
+        return folders.map(f => f.uri.fsPath)
     }
 
     return [
-        isFileURI(currentFolder.uri) ? currentFolder.uri : undefined,
-        ...folders.filter(folder => folder.toString() !== currentFolder.uri.toString()),
-    ].filter(isDefined)
+        currentFolder.uri.fsPath,
+        ...folders.filter(folder => folder.uri.toString() !== currentFolder.uri.toString()).map(f => f.uri.fsPath),
+    ]
 }
 
-function groupByFile(results: Result[]): { file: vscode.Uri; results: Result[] }[] {
-    const groups: { file: vscode.Uri; results: Result[] }[] = []
+function groupByFile(results: Result[]): { file: string; results: Result[] }[] {
+    const groups: { file: string; results: Result[] }[] = []
 
     for (const result of results) {
-        const group = groups.find(g => g.file.toString() === result.file.toString())
+        const group = groups.find(g => g.file === result.file)
         if (group) {
             group.results.push(result)
         } else {
@@ -375,10 +342,17 @@ async function resultsToDisplayResults(results: Result[]): Promise<SearchPanelFi
     return (
         await Promise.all(
             groupedResults.map(async group => {
+                const uri = vscode.Uri.file(group.file)
                 try {
-                    const contents = await vscode.workspace.fs.readFile(group.file)
+                    const contents = await vscode.workspace.fs.readFile(uri)
+                    const { base, dir, wsName } = getRenderableComponents(group.file)
                     return {
-                        uri: group.file,
+                        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+                        uriJSON: uri.toJSON(),
+                        uriString: uri.toString(),
+                        basename: base,
+                        dirname: dir,
+                        wsname: wsName,
                         snippets: group.results.map((result: Result): SearchPanelSnippet => {
                             return {
                                 contents: textDecoder.decode(
@@ -396,7 +370,7 @@ async function resultsToDisplayResults(results: Result[]): Promise<SearchPanelFi
                                 },
                             }
                         }),
-                    } satisfies SearchPanelFile
+                    }
                 } catch {
                     return null
                 }

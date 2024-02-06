@@ -10,29 +10,13 @@ describe('validateAuthStatus', () => {
     const verifiedEmail = true
     const codyEnabled = true
     const validUser = true
-    const endpoint = ''
+    const endpoint = 'https://example.com'
     const userCanUpgrade = false
-    const username = 'cody'
-    const primaryEmail = 'me@domain.test'
-    const displayName = 'Test Name'
-    const avatarURL = 'https://domain.test/avatar.png'
     // DOTCOM AND APP USERS
     test('returns auth state for invalid user on dotcom or app instance', () => {
         const expected = { ...unauthenticatedStatus, endpoint }
         expect(
-            newAuthStatus(
-                endpoint,
-                isDotComOrApp,
-                !validUser,
-                !verifiedEmail,
-                codyEnabled,
-                userCanUpgrade,
-                siteVersion,
-                avatarURL,
-                username,
-                displayName,
-                primaryEmail
-            )
+            newAuthStatus(endpoint, isDotComOrApp, !validUser, !verifiedEmail, codyEnabled, userCanUpgrade, siteVersion)
         ).toEqual(expected)
     })
 
@@ -46,25 +30,9 @@ describe('validateAuthStatus', () => {
             siteHasCodyEnabled: true,
             isLoggedIn: true,
             endpoint,
-            avatarURL,
-            username,
-            displayName,
-            primaryEmail,
         }
         expect(
-            newAuthStatus(
-                endpoint,
-                isDotComOrApp,
-                validUser,
-                verifiedEmail,
-                codyEnabled,
-                userCanUpgrade,
-                siteVersion,
-                avatarURL,
-                username,
-                displayName,
-                primaryEmail
-            )
+            newAuthStatus(endpoint, isDotComOrApp, validUser, verifiedEmail, codyEnabled, userCanUpgrade, siteVersion)
         ).toEqual(expected)
     })
 
@@ -76,25 +44,9 @@ describe('validateAuthStatus', () => {
             requiresVerifiedEmail: true,
             siteHasCodyEnabled: true,
             endpoint,
-            avatarURL,
-            username,
-            displayName,
-            primaryEmail,
         }
         expect(
-            newAuthStatus(
-                endpoint,
-                isDotComOrApp,
-                validUser,
-                !verifiedEmail,
-                codyEnabled,
-                userCanUpgrade,
-                siteVersion,
-                avatarURL,
-                username,
-                displayName,
-                primaryEmail
-            )
+            newAuthStatus(endpoint, isDotComOrApp, validUser, !verifiedEmail, codyEnabled, userCanUpgrade, siteVersion)
         ).toEqual(expected)
     })
 
@@ -105,45 +57,17 @@ describe('validateAuthStatus', () => {
             authenticated: true,
             siteHasCodyEnabled: true,
             isLoggedIn: true,
-            isDotCom: false,
             endpoint,
-            avatarURL,
-            username,
-            displayName,
-            primaryEmail,
         }
         expect(
-            newAuthStatus(
-                endpoint,
-                !isDotComOrApp,
-                validUser,
-                verifiedEmail,
-                codyEnabled,
-                userCanUpgrade,
-                siteVersion,
-                avatarURL,
-                username,
-                displayName,
-                primaryEmail
-            )
+            newAuthStatus(endpoint, !isDotComOrApp, validUser, verifiedEmail, codyEnabled, userCanUpgrade, siteVersion)
         ).toEqual(expected)
     })
 
     test('returns auth status for invalid user on enterprise instance with Cody enabled', () => {
         const expected = { ...unauthenticatedStatus, endpoint }
         expect(
-            newAuthStatus(
-                endpoint,
-                !isDotComOrApp,
-                !validUser,
-                verifiedEmail,
-                codyEnabled,
-                userCanUpgrade,
-                siteVersion,
-                avatarURL,
-                primaryEmail,
-                displayName
-            )
+            newAuthStatus(endpoint, !isDotComOrApp, !validUser, verifiedEmail, codyEnabled, userCanUpgrade, siteVersion)
         ).toEqual(expected)
     })
 
@@ -153,11 +77,6 @@ describe('validateAuthStatus', () => {
             authenticated: true,
             siteHasCodyEnabled: false,
             endpoint,
-            avatarURL,
-            username,
-            displayName,
-            primaryEmail,
-            isDotCom: false,
         }
         expect(
             newAuthStatus(
@@ -167,11 +86,7 @@ describe('validateAuthStatus', () => {
                 !verifiedEmail,
                 !codyEnabled,
                 userCanUpgrade,
-                siteVersion,
-                avatarURL,
-                username,
-                displayName,
-                primaryEmail
+                siteVersion
             )
         ).toEqual(expected)
     })
@@ -186,39 +101,7 @@ describe('validateAuthStatus', () => {
                 verifiedEmail,
                 !codyEnabled,
                 userCanUpgrade,
-                siteVersion,
-                avatarURL,
-                username,
-                displayName,
-                primaryEmail
-            )
-        ).toEqual(expected)
-    })
-
-    test('returns auth status for signed in user without email&displayName on enterprise instance', () => {
-        const expected = {
-            ...defaultAuthStatus,
-            authenticated: true,
-            siteHasCodyEnabled: true,
-            isLoggedIn: true,
-            isDotCom: false,
-            endpoint,
-            avatarURL,
-            username,
-            displayName: '',
-            primaryEmail: '',
-        }
-        expect(
-            newAuthStatus(
-                endpoint,
-                !isDotComOrApp,
-                validUser,
-                verifiedEmail,
-                codyEnabled,
-                userCanUpgrade,
-                siteVersion,
-                avatarURL,
-                username
+                siteVersion
             )
         ).toEqual(expected)
     })

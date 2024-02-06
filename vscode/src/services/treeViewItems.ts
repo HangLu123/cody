@@ -1,7 +1,7 @@
-import type { FeatureFlag } from '@sourcegraph/cody-shared'
+import { UserLocalHistory } from '@sourcegraph/cody-shared/src/chat/transcript/messages'
+import { FeatureFlag } from '@sourcegraph/cody-shared/src/experimentation/FeatureFlagProvider'
 
-import { releaseType } from '../release'
-import { version } from '../version'
+import { ACCOUNT_USAGE_URL } from '../chat/protocol'
 
 export type CodyTreeItemType = 'command' | 'support' | 'search' | 'chat'
 
@@ -14,10 +14,9 @@ export interface CodySidebarTreeItem {
         command: string
         args?: string[] | { [key: string]: string }[]
     }
-    isNestedItem?: boolean
+    isNestedItem?: string
     requireFeature?: FeatureFlag
     requireUpgradeAvailable?: boolean
-    requireDotCom?: boolean
 }
 
 /**
@@ -34,57 +33,48 @@ export function getCodyTreeItems(type: CodyTreeItemType): CodySidebarTreeItem[] 
     }
 }
 
+// functon to create chat tree items from user chat history
+export function createCodyChatTreeItems(userHistory: UserLocalHistory): CodySidebarTreeItem[] {
+    const chatTreeItems: CodySidebarTreeItem[] = []
+    const chatHistoryEntries = [...Object.entries(userHistory.chat)]
+    chatHistoryEntries.forEach(([id, entry]) => {
+        const lastHumanMessage = entry?.interactions?.findLast(interaction => interaction?.humanMessage)
+        if (lastHumanMessage?.humanMessage.displayText && lastHumanMessage?.humanMessage.text) {
+            let title = lastHumanMessage.humanMessage.displayText.split('\n')[0]
+
+            // Display command key only
+            if (title.startsWith('/')) {
+                title = title.split(' ')[0]
+            }
+
+            chatTreeItems.push({
+                id,
+                title,
+                icon: 'comment-discussion',
+                command: { command: 'cody.chat.panel.restore', args: [id, title] },
+            })
+        }
+    })
+    return chatTreeItems.reverse()
+}
+
 const supportItems: CodySidebarTreeItem[] = [
-    {
-        title: 'Upgrade',
-        description: 'Upgrade to Pro',
-        icon: 'zap',
-        command: { command: 'cody.show-page', args: ['upgrade'] },
-        requireDotCom: true,
-        requireUpgradeAvailable: true,
-    },
     {
         title: 'Usage',
         icon: 'pulse',
-        command: { command: 'cody.show-page', args: ['usage'] },
-        requireDotCom: true,
+        command: { command: 'vscode.open', args: [ACCOUNT_USAGE_URL.href] },
+        requireFeature: FeatureFlag.CodyPro,
     },
     {
         title: 'Settings',
         icon: 'settings-gear',
-        command: { command: 'cody.sidebar.settings' },
+        command: { command: 'cody.status-bar.interacted' },
     },
     {
         title: 'Keyboard Shortcuts',
         icon: 'keyboard',
-        command: { command: 'cody.sidebar.keyboardShortcuts' },
-    },
-    {
-        title: `${releaseType(version) === 'stable' ? 'Release' : 'Pre-Release'} Notes`,
-        description: `v${version}`,
-        icon: 'github',
-        command: { command: 'cody.sidebar.releaseNotes' },
-    },
-    {
-        title: 'Documentation',
-        icon: 'book',
-        command: { command: 'cody.sidebar.documentation' },
-    },
-    {
-        title: 'Feedback',
-        icon: 'feedback',
-        command: { command: 'cody.sidebar.feedback' },
-    },
-    {
-        title: 'Discord',
-        icon: 'organization',
-        command: { command: 'cody.sidebar.discord' },
-    },
-    {
-        title: 'Account',
-        icon: 'account',
-        command: { command: 'cody.sidebar.account' },
-    },
+        command: { command: 'workbench.action.openGlobalKeybindings', args: ['@ext:sourcegraph.cody-ai'] },
+    }
 ]
 
 const commandsItems: CodySidebarTreeItem[] = [
@@ -92,7 +82,7 @@ const commandsItems: CodySidebarTreeItem[] = [
         title: 'Chat',
         icon: 'comment',
         description: 'Ask Cody a question',
-        command: { command: 'cody.chat.panel.new' },
+        command: { command: 'cody.command.chat-hi' },
     },
     {
         title: 'Document',
@@ -114,20 +104,20 @@ const commandsItems: CodySidebarTreeItem[] = [
     },
     {
         title: 'Smell',
-        icon: 'checklist',
+        icon: 'symbol-keyword',
         command: { command: 'cody.command.smell-code' },
         description: 'Identify code smells',
     },
     {
         title: 'Test',
         icon: 'package',
-        command: { command: 'cody.command.unit-tests' },
+        command: { command: 'cody.command.generate-tests' },
         description: 'Generate unit tests',
     },
     {
         title: 'Custom',
         icon: 'tools',
-        command: { command: 'cody.menu.custom-commands' },
+        command: { command: 'cody.action.commands.custom.menu' },
         description: 'Custom commands',
     },
 ]

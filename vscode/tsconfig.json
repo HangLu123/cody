@@ -1,37 +1,30 @@
 {
-  "extends": "../tsconfig.json",
+  "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "sourceMap": false, // sourcemaps come from esbuild/vite
+    "sourceMap": true,
     "rootDir": ".",
     "outDir": "dist/tsc",
     "jsx": "react-jsx",
-    "lib": ["ESNext", "DOM"]
+    "lib": ["ESNext", "DOM"],
   },
   "include": [
     "src",
-    "src/commands/execute/cody.json",
     "test/fixtures",
     "playwright.config.ts",
     "test/e2e",
     "webviews",
-    "webviews/*.d.ts",
-    "package.json",
-    ".storybook/*.ts"
-  ],
-  "exclude": [
-    "scripts",
-    "dist",
-    "test/integration",
-    "**/test-data",
     "vite.config.ts",
-    "webviews/vite.config.ts"
+    "package.json",
+    ".storybook/*.ts",
+    "../lib/shared/src/telemetry/EventLogger.ts",
   ],
+  "exclude": ["scripts", "dist", "test/integration", "**/test-data"],
   "references": [
     {
-      "path": "../lib/shared"
+      "path": "../lib/shared",
     },
     {
-      "path": "../lib/ui"
-    }
-  ]
+      "path": "../lib/ui",
+    },
+  ],
 }

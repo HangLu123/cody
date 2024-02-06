@@ -1,6 +1,6 @@
-import type { TelemetryService } from '@sourcegraph/cody-shared'
+import { TelemetryService } from '@sourcegraph/cody-shared/src/telemetry'
 
-import type { VSCodeWrapper } from './VSCodeApi'
+import { VSCodeWrapper } from './VSCodeApi'
 
 /**
  * Create a new {@link TelemetryService} for use in the VS Code webviews.

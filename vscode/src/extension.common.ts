@@ -1,43 +1,42 @@
 import * as vscode from 'vscode'
 
-import type {
-    Configuration,
-    ConfigurationWithAccessToken,
-    SourcegraphBrowserCompletionsClient,
-} from '@sourcegraph/cody-shared'
+import { Recipe } from '@sourcegraph/cody-shared/src/chat/recipes/recipe'
+import { Configuration } from '@sourcegraph/cody-shared/src/configuration'
+import type { SourcegraphBrowserCompletionsClient } from '@sourcegraph/cody-shared/src/sourcegraph-api/completions/browserClient'
 import type { SourcegraphNodeCompletionsClient } from '@sourcegraph/cody-shared/src/sourcegraph-api/completions/nodeClient'
 
-import type { BfgRetriever } from './completions/context/retrievers/bfg/bfg-retriever'
+import { CommandsController } from './commands/CommandsController'
+import { BfgRetriever } from './completions/context/retrievers/bfg/bfg-retriever'
 import { onActivationDevelopmentHelpers } from './dev/helpers'
-
-import './editor/displayPathEnvInfo' // import for side effects
-
 import { ExtensionApi } from './extension-api'
-import type { LocalEmbeddingsConfig, LocalEmbeddingsController } from './local-context/local-embeddings'
+import type { FilenameContextFetcher } from './local-context/filename-context-fetcher'
+import type { LocalEmbeddingsController } from './local-context/local-embeddings'
+import type { LocalKeywordContextFetcher } from './local-context/local-keyword-context-fetcher'
 import type { SymfRunner } from './local-context/symf'
 import { start } from './main'
-import type { OpenTelemetryService } from './services/open-telemetry/OpenTelemetryService.node'
-import { captureException, type SentryService } from './services/sentry/sentry'
-import type { CommandsProvider } from './commands/services/provider'
+import type { getRgPath } from './rg'
+import { OpenTelemetryService } from './services/OpenTelemetryService.node'
+import { captureException, SentryService } from './services/sentry/sentry'
 
-type Constructor<T extends new (...args: any) => any> = T extends new (
-    ...args: infer A
-) => infer R
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Constructor<T extends new (...args: any) => any> = T extends new (...args: infer A) => infer R
     ? (...args: A) => R
     : never
 
 export interface PlatformContext {
-    createCommandsProvider?: Constructor<typeof CommandsProvider>
-    createLocalEmbeddingsController?: (config: LocalEmbeddingsConfig) => LocalEmbeddingsController
+    getRgPath?: typeof getRgPath
+    createCommandsController?: Constructor<typeof CommandsController>
+    createLocalEmbeddingsController?: () => LocalEmbeddingsController
+    createLocalKeywordContextFetcher?: Constructor<typeof LocalKeywordContextFetcher>
     createSymfRunner?: Constructor<typeof SymfRunner>
     createBfgRetriever?: () => BfgRetriever
+    createFilenameContextFetcher?: Constructor<typeof FilenameContextFetcher>
     createCompletionsClient:
         | Constructor<typeof SourcegraphBrowserCompletionsClient>
         | Constructor<typeof SourcegraphNodeCompletionsClient>
-    createSentryService?: (config: Pick<ConfigurationWithAccessToken, 'serverEndpoint'>) => SentryService
-    createOpenTelemetryService?: (
-        config: Pick<ConfigurationWithAccessToken, 'serverEndpoint' | 'experimentalTracing'>
-    ) => OpenTelemetryService
+    createSentryService?: (config: Pick<Configuration, 'serverEndpoint'>) => SentryService
+    createOpenTelemetryService?: (config: Pick<Configuration, 'serverEndpoint'>) => OpenTelemetryService
+    recipes: Recipe[]
     onConfigurationChange?: (configuration: Configuration) => void
 }
 

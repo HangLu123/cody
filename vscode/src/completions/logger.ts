@@ -2,23 +2,21 @@ import { LRUCache } from 'lru-cache'
 import * as uuid from 'uuid'
 import * as vscode from 'vscode'
 
-import { isNetworkError, type BillingCategory, type BillingProduct } from '@sourcegraph/cody-shared'
-import type { KnownString, TelemetryEventParameters } from '@sourcegraph/telemetry'
+import { isNetworkError } from '@sourcegraph/cody-shared/src/sourcegraph-api/errors'
 
 import { getConfiguration } from '../configuration'
 import { captureException, shouldErrorBeReported } from '../services/sentry/sentry'
 import { getExtensionDetails, logPrefix, telemetryService } from '../services/telemetry'
-import { splitSafeMetadata, telemetryRecorder } from '../services/telemetry-v2'
-import type { CompletionIntent } from '../tree-sitter/query-sdk'
+import { CompletionIntent } from '../tree-sitter/query-sdk'
 
-import type { ContextSummary } from './context/context-mixer'
-import type { InlineCompletionsResultSource, TriggerKind } from './get-inline-completions'
+import { ContextSummary } from './context/context-mixer'
+import { InlineCompletionsResultSource, TriggerKind } from './get-inline-completions'
 import { PersistenceTracker } from './persistence-tracker'
-import type { RequestParams } from './request-manager'
+import { RequestParams } from './request-manager'
 import * as statistics from './statistics'
-import type { InlineCompletionItemWithAnalytics } from './text-processing/process-inline-completions'
+import { InlineCompletionItemWithAnalytics } from './text-processing/process-inline-completions'
 import { lines } from './text-processing/utils'
-import type { InlineCompletionItem } from './types'
+import { InlineCompletionItem } from './types'
 
 // A completion ID is a unique identifier for a specific completion text displayed at a specific
 // point in the document. A single completion can be suggested multiple times.
@@ -37,16 +35,14 @@ declare const CompletionLogID: unique symbol
 export type CompletionItemID = string & { _opaque: typeof CompletionItemID }
 declare const CompletionItemID: unique symbol
 
-interface InteractionIDPayload {
+interface SharedEventPayload {
     /**
      * An ID to uniquely identify a suggest completion. Note: It is possible for this ID to be part
      * of two suggested events. This happens when the exact same completion text is shown again at
      * the exact same location. We count this as the same completion and thus use the same ID.
      */
     id: CompletionAnalyticsID | null
-}
 
-interface SharedEventPayload extends InteractionIDPayload {
     /** Eventual Sourcegraph instance OpenTelemetry trace id */
     traceId?: string
 
@@ -70,9 +66,6 @@ interface SharedEventPayload extends InteractionIDPayload {
 
     /** Language of the document being completed. */
     languageId: string
-
-    /** If we're inside a test file */
-    testFile: boolean
 
     /**
      * Information about the context retrieval process that lead to this autocomplete request. Refer
@@ -103,14 +96,6 @@ interface SharedEventPayload extends InteractionIDPayload {
 
     /** A list of known completion providers that are also enabled with this user. */
     otherCompletionProviders: string[]
-}
-
-/**
- * hasInteractionID helps extracting analytics interaction ID from parameters
- * that extend SharedEventPayload.
- */
-function hasInteractionID(params: any): params is InteractionIDPayload {
-    return 'id' in params
 }
 
 /** Emitted when a completion was suggested to the user and printed onto the screen */
@@ -184,101 +169,18 @@ interface ErrorEventPayload {
     count: number
 }
 
-/** Emitted when a completion is formatted on accept */
-interface FormatEventPayload {
-    // `formatCompletion` duration.
-    duration: number
-    // Current document langauge ID
-    languageId: string
-    // Formatter name extracted from user settings JSON.
-    formatter?: string
-}
-
-function logCompletionSuggestedEvent(params: SuggestedEventPayload): void {
-    // Use automatic splitting for now - make this manual as needed
-    const { metadata, privateMetadata } = splitSafeMetadata(params)
-    writeCompletionEvent(
-        'suggested',
-        {
-            version: 0,
-            metadata,
-            privateMetadata,
-        },
-        params
-    )
-}
-function logCompletionAcceptedEvent(params: AcceptedEventPayload): void {
-    // Use automatic splitting for now - make this manual as needed
-    const { metadata, privateMetadata } = splitSafeMetadata(params)
-    writeCompletionEvent(
-        'accepted',
-        {
-            version: 0,
-            metadata,
-            privateMetadata,
-        },
-        params
-    )
-}
-function logCompletionPartiallyAcceptedEvent(params: PartiallyAcceptedEventPayload): void {
-    // Use automatic splitting for now - make this manual as needed
-    const { metadata, privateMetadata } = splitSafeMetadata(params)
-    writeCompletionEvent(
-        'partiallyAccepted',
-        {
-            version: 0,
-            metadata,
-            privateMetadata,
-        },
-        params
-    )
-}
-export function logCompletionPersistencePresentEvent(params: PersistencePresentEventPayload): void {
-    // Use automatic splitting for now - make this manual as needed
-    const { metadata, privateMetadata } = splitSafeMetadata(params)
-    writeCompletionEvent(
-        'persistence:present',
-        {
-            version: 0,
-            metadata,
-            privateMetadata,
-        },
-        params
-    )
-}
-export function logCompletionPersistenceRemovedEvent(params: PersistenceRemovedEventPayload): void {
-    // Use automatic splitting for now - make this manual as needed
-    const { metadata, privateMetadata } = splitSafeMetadata(params)
-    writeCompletionEvent(
-        'persistence:removed',
-        {
-            version: 0,
-            metadata,
-            privateMetadata,
-        },
-        params
-    )
-}
-function logCompletionNoResponseEvent(params: NoResponseEventPayload): void {
-    // Use automatic splitting for now - make this manual as needed
-    const { metadata, privateMetadata } = splitSafeMetadata(params)
-    writeCompletionEvent('noResponse', { version: 0, metadata, privateMetadata }, params)
-}
-function logCompletionErrorEvent(params: ErrorEventPayload): void {
-    // Use automatic splitting for now - make this manual as needed
-    const { metadata, privateMetadata } = splitSafeMetadata(params)
-    writeCompletionEvent('error', { version: 0, metadata, privateMetadata }, params)
-}
-export function logCompletionFormatEvent(params: FormatEventPayload): void {
-    // Use automatic splitting for now - make this manual as needed
-    const { metadata, privateMetadata } = splitSafeMetadata(params)
-    writeCompletionEvent('format', { version: 0, metadata, privateMetadata }, params)
-}
+export function logCompletionEvent(name: 'suggested', params: SuggestedEventPayload): void
+export function logCompletionEvent(name: 'accepted', params: AcceptedEventPayload): void
+export function logCompletionEvent(name: 'partiallyAccepted', params: PartiallyAcceptedEventPayload): void
+export function logCompletionEvent(name: 'persistence:present', params: PersistencePresentEventPayload): void
+export function logCompletionEvent(name: 'persistence:removed', params: PersistenceRemovedEventPayload): void
+export function logCompletionEvent(name: 'noResponse', params: NoResponseEventPayload): void
+export function logCompletionEvent(name: 'error', params: ErrorEventPayload): void
 /**
  * The following events are added to ensure the logging bookkeeping works as expected in production
  * and should not happen under normal circumstances.
  */
-export function logCompletionBookkeepingEvent(
+export function logCompletionEvent(
     name:
         | 'acceptedUntrackedCompletion'
         | 'unexpectedNotLoaded'
@@ -287,50 +189,15 @@ export function logCompletionBookkeepingEvent(
         | 'unexpectedAlreadySuggested'
         | 'containsOpeningTag'
         | 'synthesizedFromParallelRequest'
-): void {
-    writeCompletionEvent(name)
-}
-
-/**
- * writeCompletionEvent is the underlying helper for various logCompletion*
- * functions. It writes telemetry in the appropriate format to both the v1
- * and v2 telemetry.
- */
-function writeCompletionEvent<Name extends string, LegacyParams extends {}>(
-    name: KnownString<Name>,
-    params?: TelemetryEventParameters<{ [key: string]: number }, BillingProduct, BillingCategory>,
-    /**
-     * legacyParams are passed through as-is the legacy event logger for backwards
-     * compatibility. All relevant arguments should also be set on the params
-     * object.
-     */
-    legacyParams?: LegacyParams
-): void {
+): void
+export function logCompletionEvent(name: string, params: {} = {}): void {
     const extDetails = getExtensionDetails(getConfiguration(vscode.workspace.getConfiguration()))
-    telemetryService.log(`${logPrefix(extDetails.ide)}:completion:${name}`, legacyParams, {
-        agent: true,
-        hasV2Event: true, // this helper translates the event for us
-    })
-    /**
-     * Extract interaction ID from the full legacy params for convenience
-     */
-    if (params && hasInteractionID(legacyParams)) {
-        params.interactionID = legacyParams.id?.toString()
-    }
-    /**
-     * New telemetry automatically adds extension context - we do not need to
-     * include platform in the name of the event. However, we MUST prefix the
-     * event with 'cody.' to have the event be categorized as a Cody event.
-     */
-    telemetryRecorder.recordEvent('cody.completion', name, params)
+    telemetryService.log(`${logPrefix(extDetails.ide)}:completion:${name}`, params, { agent: true })
 }
 
 export interface CompletionBookkeepingEvent {
     id: CompletionLogID
-    params: Omit<
-        SharedEventPayload,
-        'items' | 'otherCompletionProviderEnabled' | 'otherCompletionProviders'
-    >
+    params: Omit<SharedEventPayload, 'items' | 'otherCompletionProviderEnabled' | 'otherCompletionProviders'>
     // The timestamp when the completion request started
     startedAt: number
     // The timestamp when the completion fired off an eventual network request
@@ -374,7 +241,6 @@ export interface ItemPostProcessingInfo {
         parent?: string
         grandparent?: string
         greatGrandparent?: string
-        lastAncestorOnTheSameLine?: string
     }
     // Syntax node types extracted from the tree-sitter parse-tree with the completion pasted.
     nodeTypesWithCompletion?: {
@@ -382,19 +248,16 @@ export interface ItemPostProcessingInfo {
         parent?: string
         grandparent?: string
         greatGrandparent?: string
-        lastAncestorOnTheSameLine?: string
     }
 }
 
-export interface CompletionItemInfo extends ItemPostProcessingInfo {
+interface CompletionItemInfo extends ItemPostProcessingInfo {
     lineCount: number
     charCount: number
-    // 🚨 SECURITY: included only for DotCom users.
-    insertText?: string
     stopReason?: string
 }
 
-const READ_TIMEOUT_MS = 750
+export const READ_TIMEOUT_MS = 750
 
 // Maintain a cache of active suggestion requests
 const activeSuggestionRequests = new LRUCache<CompletionLogID, CompletionBookkeepingEvent>({
@@ -458,10 +321,7 @@ export function start(id: CompletionLogID): void {
     }
 }
 
-export function networkRequestStarted(
-    id: CompletionLogID,
-    contextSummary: ContextSummary | undefined
-): void {
+export function networkRequestStarted(id: CompletionLogID, contextSummary: ContextSummary | undefined): void {
     const event = activeSuggestionRequests.get(id)
     if (event && !event.networkRequestStartedAt) {
         event.networkRequestStartedAt = performance.now()
@@ -473,8 +333,7 @@ export function loaded(
     id: CompletionLogID,
     params: RequestParams,
     items: InlineCompletionItemWithAnalytics[],
-    source: InlineCompletionsResultSource,
-    isDotComUser: boolean
+    source: InlineCompletionsResultSource
 ): void {
     const event = activeSuggestionRequests.get(id)
     if (!event) {
@@ -485,8 +344,7 @@ export function loaded(
 
     // Check if we already have a completion id for the loaded completion item
     const key = items.length > 0 ? getRecentCompletionsKey(params, items[0].insertText) : ''
-    const completionId: CompletionAnalyticsID =
-        recentCompletions.get(key) ?? (uuid.v4() as CompletionAnalyticsID)
+    const completionId: CompletionAnalyticsID = recentCompletions.get(key) ?? (uuid.v4() as CompletionAnalyticsID)
     recentCompletions.set(key, completionId)
     event.params.id = completionId
 
@@ -495,7 +353,7 @@ export function loaded(
     }
 
     if (event.items.length === 0) {
-        event.items = items.map(item => completionItemToItemInfo(item, isDotComUser))
+        event.items = items.map(completionItemToItemInfo)
     }
 }
 
@@ -505,7 +363,7 @@ export function loaded(
 //
 // For statistics logging we start a timeout matching the READ_TIMEOUT_MS so we can increment the
 // suggested completion count as soon as we count it as such.
-export function suggested(id: CompletionLogID): void {
+export function suggested(id: CompletionLogID, completion: InlineCompletionItemWithAnalytics): void {
     const event = activeSuggestionRequests.get(id)
     if (!event) {
         return
@@ -543,26 +401,25 @@ export function accepted(
     id: CompletionLogID,
     document: vscode.TextDocument,
     completion: InlineCompletionItemWithAnalytics,
-    trackedRange: vscode.Range | undefined,
-    isDotComUser: boolean
+    trackedRange: vscode.Range | undefined
 ): void {
     const completionEvent = activeSuggestionRequests.get(id)
     if (!completionEvent || completionEvent.acceptedAt) {
         // Log a debug event, this case should not happen in production
-        logCompletionBookkeepingEvent('acceptedUntrackedCompletion')
+        logCompletionEvent('acceptedUntrackedCompletion')
         return
     }
 
     // Some additional logging to ensure the invariant is correct. I expect these branches to never
     // hit but if they do, they might help debug analytics issues
     if (!completionEvent.loadedAt) {
-        logCompletionBookkeepingEvent('unexpectedNotLoaded')
+        logCompletionEvent('unexpectedNotLoaded')
     }
     if (!completionEvent.startLoggedAt) {
-        logCompletionBookkeepingEvent('unexpectedNotStarted')
+        logCompletionEvent('unexpectedNotStarted')
     }
     if (!completionEvent.suggestedAt) {
-        logCompletionBookkeepingEvent('unexpectedNotSuggested')
+        logCompletionEvent('unexpectedNotSuggested')
     }
     // It is still possible to accept a completion before it was logged as suggested. This is
     // because we do not have direct access to know when a completion is being shown or hidden from
@@ -575,7 +432,7 @@ export function accepted(
     // However, we do log the completion as rejected with the keystroke leaving a small window where
     // the completion can be accepted after it was marked as suggested.
     if (completionEvent.suggestionLoggedAt) {
-        logCompletionBookkeepingEvent('unexpectedAlreadySuggested')
+        logCompletionEvent('unexpectedAlreadySuggested')
     }
 
     if (!completionEvent.params.id) {
@@ -597,9 +454,9 @@ export function accepted(
     completionEvent.acceptedAt = performance.now()
 
     logSuggestionEvents()
-    logCompletionAcceptedEvent({
+    logCompletionEvent('accepted', {
         ...getSharedParams(completionEvent),
-        acceptedItem: completionItemToItemInfo(completion, isDotComUser),
+        acceptedItem: completionItemToItemInfo(completion),
     })
     statistics.logAccepted()
 
@@ -621,8 +478,7 @@ export function accepted(
 export function partiallyAccept(
     id: CompletionLogID,
     completion: InlineCompletionItemWithAnalytics,
-    acceptedLength: number,
-    isDotComUser: boolean
+    acceptedLength: number
 ): void {
     const completionEvent = activeSuggestionRequests.get(id)
     // Only log partial acceptances if the completion was not yet fully accepted
@@ -640,9 +496,9 @@ export function partiallyAccept(
     const acceptedLengthDelta = acceptedLength - loggedPartialAcceptedLength
     completionEvent.loggedPartialAcceptedLength = acceptedLength
 
-    logCompletionPartiallyAcceptedEvent({
+    logCompletionEvent('partiallyAccepted', {
         ...getSharedParams(completionEvent),
-        acceptedItem: completionItemToItemInfo(completion, isDotComUser),
+        acceptedItem: completionItemToItemInfo(completion),
         acceptedLength,
         acceptedLengthDelta,
     })
@@ -658,7 +514,7 @@ export function noResponse(id: CompletionLogID): void {
     if (!completionEvent) {
         return
     }
-    logCompletionNoResponseEvent(getSharedParams(completionEvent))
+    logCompletionEvent('noResponse', getSharedParams(completionEvent))
 }
 
 /**
@@ -671,7 +527,6 @@ export function flushActiveSuggestionRequests(): void {
 
 function logSuggestionEvents(): void {
     const now = performance.now()
-    // biome-ignore lint/complexity/noForEach: LRUCache#forEach has different typing than #entries, so just keeping it for now
     activeSuggestionRequests.forEach(completionEvent => {
         const {
             params,
@@ -705,7 +560,7 @@ function logSuggestionEvents(): void {
             }
         }
 
-        logCompletionSuggestedEvent({
+        logCompletionEvent('suggested', {
             ...getSharedParams(completionEvent),
             latency,
             displayDuration,
@@ -730,10 +585,7 @@ export function reset_testOnly(): void {
     completionsStartedSinceLastSuggestion = 0
 }
 
-function lineAndCharCount({ insertText }: InlineCompletionItem): {
-    lineCount: number
-    charCount: number
-} {
+function lineAndCharCount({ insertText }: InlineCompletionItem): { lineCount: number; charCount: number } {
     const lineCount = lines(insertText).length
     const charCount = insertText.length
     return { lineCount, charCount }
@@ -762,7 +614,7 @@ export function logError(error: Error): void {
 
     if (!errorCounts.has(message)) {
         errorCounts.set(message, 0)
-        logCompletionErrorEvent({ message, traceId, count: 1 })
+        logCompletionEvent('error', { message, traceId, count: 1 })
     }
 
     const count = errorCounts.get(message)!
@@ -770,7 +622,7 @@ export function logError(error: Error): void {
         // Start a new flush interval
         setTimeout(() => {
             const count = errorCounts.get(message)!
-            logCompletionErrorEvent({ message, traceId, count })
+            logCompletionEvent('error', { message, traceId, count })
             errorCounts.set(message, 0)
         }, TEN_MINUTES)
     }
@@ -787,13 +639,10 @@ function getSharedParams(event: CompletionBookkeepingEvent): SharedEventPayload 
     }
 }
 
-function completionItemToItemInfo(
-    item: InlineCompletionItemWithAnalytics,
-    isDotComUser: boolean
-): CompletionItemInfo {
+function completionItemToItemInfo(item: InlineCompletionItemWithAnalytics): CompletionItemInfo {
     const { lineCount, charCount } = lineAndCharCount(item)
 
-    const completionItemInfo: CompletionItemInfo = {
+    return {
         lineCount,
         charCount,
         stopReason: item.stopReason,
@@ -803,15 +652,6 @@ function completionItemToItemInfo(
         nodeTypes: item.nodeTypes,
         nodeTypesWithCompletion: item.nodeTypesWithCompletion,
     }
-
-    // Do not log long insert text.
-    // 200 is a char_count limit based on the 98 percentile from the last 14 days.
-    if (isDotComUser && charCount < 200) {
-        // 🚨 SECURITY: included only for DotCom users.
-        completionItemInfo.insertText = item.insertText
-    }
-
-    return completionItemInfo
 }
 
 const otherCompletionProviders = [

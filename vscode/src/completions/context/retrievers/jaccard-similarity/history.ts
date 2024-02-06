@@ -1,6 +1,6 @@
 import * as vscode from 'vscode'
 
-interface HistoryItem {
+export interface HistoryItem {
     document: Pick<vscode.TextDocument, 'uri' | 'languageId'>
 }
 

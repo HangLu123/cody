@@ -1,33 +1,33 @@
 import * as vscode from 'vscode'
 
-import {
-    EventLogger,
-    type Configuration,
-    type ConfigurationWithAccessToken,
-    type ExtensionDetails,
-    type TelemetryEventProperties,
-    type TelemetryService,
-} from '@sourcegraph/cody-shared'
+import { Configuration, ConfigurationWithAccessToken } from '@sourcegraph/cody-shared/src/configuration'
+import { TelemetryEventProperties, TelemetryService } from '@sourcegraph/cody-shared/src/telemetry'
+import { EventLogger, ExtensionDetails } from '@sourcegraph/cody-shared/src/telemetry/EventLogger'
 
+import { version as packageVersion } from '../../package.json'
 import { getConfiguration } from '../configuration'
 import { logDebug } from '../log'
 import { getOSArch } from '../os'
-import { version } from '../version'
 
 import { localStorage } from './LocalStorageProvider'
 
-let eventLogger: EventLogger | null = null
+export let eventLogger: EventLogger | null = null
 let telemetryLevel: 'all' | 'off' | 'agent' = 'off'
 let globalAnonymousUserID: string
 
 const { platform, arch } = getOSArch()
 
+export const extensionVersion =
+    vscode.extensions.getExtension('sourcegraph.cody-ai')?.packageJSON?.version ?? packageVersion
 export const getExtensionDetails = (config: Pick<Configuration, 'agentIDE'>): ExtensionDetails => ({
     ide: config.agentIDE ?? 'VSCode',
     ideExtensionType: 'Cody',
     platform: platform ?? 'browser',
     arch,
-    version,
+    // Prefer the runtime package json over the version that is inlined during build times. This
+    // way we will be able to include pre-release builds that are published with a different version
+    // identifier.
+    version: extensionVersion,
 })
 
 /**
@@ -73,8 +73,8 @@ export async function createOrUpdateEventLogger(
 
 /**
  * Log a telemetry event using the legacy event-logging mutations.
- * @deprecated New callsites should use telemetryRecorder instead. Existing
- * callsites should ALSO record an event using services/telemetry-v2
+ *
+ * DEPRECATED: Callsites should ALSO record an event using services/telemetry-v2
  * as well and indicate this has happened, for example:
  *
  * logEvent(name, properties, { hasV2Event: true })
@@ -82,14 +82,14 @@ export async function createOrUpdateEventLogger(
  *
  * In the future, all usages of TelemetryService will be removed in
  * favour of the new libraries. For more information, see:
- * https://sourcegraph.com/docs/dev/background-information/telemetry
- * @param eventName The name of the event.
- * @param properties Event properties. Do NOT include any private information, such as full URLs
- * that may contain private repository names or search queries.
+ * https://docs.sourcegraph.com/dev/background-information/telemetry
  *
  * PRIVACY: Do NOT include any potentially private information in `properties`. These properties may
  * get sent to analytics tools, so must not include private information, such as search queries or
  * repository names.
+ * @param eventName The name of the event.
+ * @param properties Event properties. Do NOT include any private information, such as full URLs
+ * that may contain private repository names or search queries.
  */
 function logEvent(
     eventName: string,
@@ -101,9 +101,7 @@ function logEvent(
     }
 
     logDebug(
-        `logEvent${
-            eventLogger === null || process.env.CODY_TESTING === 'true' ? ' (telemetry disabled)' : ''
-        }`,
+        `logEvent${eventLogger === null || process.env.CODY_TESTING === 'true' ? ' (telemetry disabled)' : ''}`,
         eventName,
         getExtensionDetails(getConfiguration(vscode.workspace.getConfiguration())).ide,
         JSON.stringify({ properties, opts })
@@ -120,16 +118,21 @@ function logEvent(
 
 /**
  * telemetryService logs events using the legacy event-logging mutations.
- * @deprecated New callsites should use telemetryRecorder instead. Existing
- * callsites should ALSO record an event using services/telemetry-v2
+ *
+ * DEPRECATED: Callsites should ALSO record an event using services/telemetry-v2
  * as well and indicate this has happened, for example:
  *
- * logEvent(name, properties, { hasV2Event: true })
- * telemetryRecorder.recordEvent(...)
+ *   telemetryService.logEvent(name, properties, { hasV2Event: true })
+ *   telemetryRecorder.recordEvent(...)
  *
  * In the future, all usages of TelemetryService will be removed in
  * favour of the new libraries. For more information, see:
- * https://sourcegraph.com/docs/dev/background-information/telemetry
+ * https://docs.sourcegraph.com/dev/background-information/telemetry
+ *
+ * If using the new client, the old logging call should indicate a new event is
+ * also instrumented:
+ *
+ *   logEvent(name, properties, { hasV2Event: true })
  */
 export const telemetryService: TelemetryService = {
     log(eventName, properties, opts) {

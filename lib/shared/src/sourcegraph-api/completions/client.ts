@@ -1,24 +1,14 @@
-import type { ConfigurationWithAccessToken } from '../../configuration'
+import * as vscode from 'vscode'
+import { ConfigurationWithAccessToken } from '../../configuration'
 
-import type {
-    CompletionCallbacks,
-    CompletionGeneratorValue,
-    CompletionParameters,
-    CompletionResponse,
-    Event,
-} from './types'
+import { CompletionCallbacks, CompletionParameters, CompletionResponse, Event } from './types'
 
 export interface CompletionLogger {
-    startCompletion(
-        params: CompletionParameters | unknown,
-        endpoint: string
-    ):
+    startCompletion(params: CompletionParameters | {}):
         | undefined
         | {
-              onError: (error: string, rawError?: unknown) => void
-              onComplete: (
-                  response: string | CompletionResponse | string[] | CompletionResponse[]
-              ) => void
+              onError: (error: string) => void
+              onComplete: (response: string | CompletionResponse | string[] | CompletionResponse[]) => void
               onEvents: (events: Event[]) => void
           }
 }
@@ -30,9 +20,6 @@ export type CompletionsClientConfig = Pick<
 
 /**
  * Access the chat based LLM APIs via a Sourcegraph server instance.
- *
- * 🚨 SECURITY: It is the caller's responsibility to ensure context from
- * all cody ignored files are removed before sending requests to the server.
  */
 export abstract class SourcegraphCompletionsClient {
     private errorEncountered = false
@@ -47,7 +34,10 @@ export abstract class SourcegraphCompletionsClient {
     }
 
     protected get completionsEndpoint(): string {
-        return new URL('/.api/completions/stream', this.config.serverEndpoint).href
+        let config = vscode.workspace.getConfiguration()
+        const endpoint = config.get<string>('cody.llama.serverEndpoint')
+        // stream chat completion URL
+        return new URL('/completion', endpoint).href
     }
 
     protected sendEvents(events: Event[], cb: CompletionCallbacks): void {
@@ -58,7 +48,7 @@ export abstract class SourcegraphCompletionsClient {
                     break
                 case 'error':
                     this.errorEncountered = true
-                    cb.onError(new Error(event.error))
+                    cb.onError(event.error)
                     break
                 case 'done':
                     if (!this.errorEncountered) {
@@ -71,56 +61,30 @@ export abstract class SourcegraphCompletionsClient {
         }
     }
 
-    protected abstract _streamWithCallbacks(
-        params: CompletionParameters,
-        cb: CompletionCallbacks,
-        signal?: AbortSignal
-    ): void
+    public abstract stream(params: CompletionParameters, cb: CompletionCallbacks): () => void
+}
 
-    public stream(
-        params: CompletionParameters,
-        signal?: AbortSignal
-    ): AsyncGenerator<CompletionGeneratorValue> {
-        // This is a technique to convert a function that takes callbacks to an async generator.
-
-        const values: Promise<CompletionGeneratorValue>[] = []
-        let resolve: ((value: CompletionGeneratorValue) => void) | undefined
-        values.push(
-            new Promise(r => {
-                resolve = r
-            })
-        )
-
-        const send = (value: CompletionGeneratorValue): void => {
-            resolve!(value)
-            values.push(
-                new Promise(r => {
-                    resolve = r
-                })
-            )
-        }
+/**
+ * A helper function that calls the streaming API but will buffer the result
+ * until the stream has completed.
+ */
+export function bufferStream(
+    client: Pick<SourcegraphCompletionsClient, 'stream'>,
+    params: CompletionParameters
+): Promise<string> {
+    return new Promise((resolve, reject) => {
+        let buffer = ''
         const callbacks: CompletionCallbacks = {
-            onChange(text) {
-                send({ type: 'change', text })
+            onChange(text: string) {
+                buffer = text
             },
             onComplete() {
-                send({ type: 'complete' })
+                resolve(buffer)
             },
-            onError(error, statusCode) {
-                send({ type: 'error', error, statusCode })
+            onError(message: string, code?: number) {
+                reject(new Error(code ? `${message} (code ${code})` : message))
             },
         }
-        this._streamWithCallbacks(params, callbacks, signal)
-
-        return (async function* () {
-            for (let i = 0; ; i++) {
-                const val = await values[i]
-                delete values[i]
-                yield val
-                if (val.type === 'complete' || val.type === 'error') {
-                    break
-                }
-            }
-        })()
-    }
+        client.stream(params, callbacks)
+    })
 }
