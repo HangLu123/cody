@@ -8,11 +8,19 @@ import type {
 
 type ChatParameters = Omit<CompletionParameters, 'messages'>
 
-const DEFAULT_CHAT_COMPLETION_PARAMETERS: ChatParameters = {
-    temperature: 0.2,
-    maxTokensToSample: ANSWER_TOKENS,
-    topK: -1,
-    topP: -1,
+// const DEFAULT_CHAT_COMPLETION_PARAMETERS: ChatParameters = {
+//     temperature: 0.2,
+//     maxTokensToSample: ANSWER_TOKENS,
+//     topK: -1,
+//     topP: -1,
+// }
+
+const DEFAULT_CHAT_COMPLETION_PARAMETERS: any = {
+    "model":"llama-2",
+    "prompt":"你好",
+    "max_tokens":700,
+    "temperature":0.5,
+    "stream":true
 }
 
 export class ChatClient {
@@ -40,7 +48,6 @@ export class ChatClient {
         return this.completions.stream(
             {
                 ...DEFAULT_CHAT_COMPLETION_PARAMETERS,
-                ...params,
                 messages: augmentedMessages,
             },
             abortSignal

@@ -9,8 +9,9 @@ import { customUserAgent } from '../graphql/client'
 import { toPartialUtf8String } from '../utils'
 
 import { SourcegraphCompletionsClient } from './client'
-import { parseEvents } from './parse'
-import type { CompletionCallbacks, CompletionParameters } from './types'
+// import { parseEvents } from './parse'
+import { parseSSEData } from './parse'
+import type { CompletionCallbacks, CompletionParameters  } from './types'
 
 const isTemperatureZero = process.env.CODY_TEMPERATURE_ZERO === 'true'
 
@@ -127,6 +128,7 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                 let bufferBin = Buffer.of()
                 // Text which has not been decoded as a server-sent event (SSE)
                 let bufferText = ''
+                let completionText = ''
 
                 res.on('data', chunk => {
                     if (!(chunk instanceof Buffer)) {
@@ -135,23 +137,23 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                     // text/event-stream messages are always UTF-8, but a chunk
                     // may terminate in the middle of a character
                     const { str, buf } = toPartialUtf8String(Buffer.concat([bufferBin, chunk]))
-                    bufferText += str
+                    // bufferText += str
                     bufferBin = buf
 
-                    const parseResult = parseEvents(bufferText)
-                    if (isError(parseResult)) {
-                        logError(
-                            'SourcegraphNodeCompletionsClient',
-                            'isError(parseEvents(bufferText))',
-                            parseResult
-                        )
+                    const event = parseSSEData(bufferText == '' ? str : bufferText + str)
+                    if (isError(event)) {
+                        console.error(event)
+                        bufferText += str
                         return
                     }
 
                     didSendMessage = true
-                    log?.onEvents(parseResult.events)
-                    this.sendEvents(parseResult.events, cb)
-                    bufferText = parseResult.remainingBuffer
+                    if (event.type == "completion") {
+                        completionText += event.completion
+                        event.completion = completionText
+                    }
+                    bufferText = ''
+                    this.sendEvents([event], cb)
                 })
 
                 res.on('error', e => handleError(e))

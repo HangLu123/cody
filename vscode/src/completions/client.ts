@@ -32,7 +32,8 @@ export function createClient(
         params: CodeCompletionsParams,
         abortController: AbortController
     ): CompletionResponseGenerator {
-        const url = new URL('/.api/completions/code', config.serverEndpoint).href
+        // const url = new URL('/.api/completions/code', config.serverEndpoint).href
+        const url = 'https://192.168.73.2/dockerService/FastChat-jhadmin-ada87435-4341-4619-b6d2-c32cbd06da7d/v1/completions'
         const log = logger?.startCompletion(params, url)
         const { signal } = abortController
 

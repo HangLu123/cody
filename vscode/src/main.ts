@@ -36,7 +36,8 @@ import { logDebug, logError } from './log'
 import { showSetupNotification } from './notifications/setup-notification'
 import { gitAPIinit } from './repository/repositoryHelpers'
 import { SearchViewProvider } from './search/SearchViewProvider'
-import { AuthProvider } from './services/AuthProvider'
+// import { AuthProvider } from './services/AuthProvider'
+import { AlwaysAuthProvider as AuthProvider } from './services/AlwaysAuthProvider'
 import { showFeedbackSupportQuickPick } from './services/FeedbackOptions'
 import { GuardrailsProvider } from './services/GuardrailsProvider'
 import { displayHistoryQuickPick } from './services/HistoryChat'
@@ -496,12 +497,12 @@ const register = async (
             const authStatus = authProvider.getAuthStatus()
             const endpoint = authStatus.endpoint
             if (ws.focused && endpoint && isDotCom(endpoint) && authStatus.isLoggedIn) {
-                const res = await graphqlClient.getCurrentUserCodyProEnabled()
-                if (res instanceof Error) {
-                    console.error(res)
-                    return
-                }
-                authStatus.userCanUpgrade = !res.codyProEnabled
+                // const res = await graphqlClient.getCurrentUserCodyProEnabled()
+                // if (res instanceof Error) {
+                //     console.error(res)
+                //     return
+                // }
+                // authStatus.userCanUpgrade = !res.codyProEnabled
                 void chatManager.syncAuthStatus(authStatus)
             }
         })
