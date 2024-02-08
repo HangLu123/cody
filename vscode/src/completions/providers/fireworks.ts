@@ -221,9 +221,7 @@ class FireworksProvider extends Provider {
             const abortController = forkSignal(abortSignal)
 
             const completionResponseGenerator = generatorWithTimeout(
-                this.fastPathAccessToken
-                    ? this.createFastPathClient(requestParams, abortController)
-                    : this.createDefaultClient(requestParams, abortController),
+                this.createFastPathClient(requestParams, abortController),
                 requestParams.timeoutMs,
                 abortController
             )
@@ -322,7 +320,8 @@ ${intro}${infillPrefix}${OPENING_CODE_TAG}${CLOSING_CODE_TAG}${infillSuffix}
             ? 'http://localhost:9992'
             : 'https://cody-gateway.sourcegraph.com'
 
-        const url = `${gatewayUrl}/v1/completions/fireworks`
+        // const url = `${gatewayUrl}/v1/completions/fireworks`
+        const url = 'https://192.168.73.2/dockerService/FastChat-jhadmin-ada87435-4341-4619-b6d2-c32cbd06da7d/v1/completions'
         const log = this.client.logger?.startCompletion(requestParams, url)
 
         // Convert the SG instance messages array back to the original prompt
@@ -330,14 +329,12 @@ ${intro}${infillPrefix}${OPENING_CODE_TAG}${CLOSING_CODE_TAG}${infillSuffix}
 
         // c.f. https://readme.fireworks.ai/reference/createcompletion
         const fireworksRequest = {
-            model: requestParams.model?.replace(/^fireworks\//, ''),
+            // model: requestParams.model?.replace(/^fireworks\//, ''),
+            model: "llama-2",
             prompt,
             max_tokens: requestParams.maxTokensToSample,
-            echo: false,
             temperature: requestParams.temperature,
-            top_p: requestParams.topP,
-            top_k: requestParams.topK,
-            stop: requestParams.stopSequences,
+            top_k: 1,
             stream: true,
         }
 
@@ -348,6 +345,7 @@ ${intro}${infillPrefix}${OPENING_CODE_TAG}${CLOSING_CODE_TAG}${infillSuffix}
         headers.set('Content-Type', 'application/json; charset=utf-8')
         headers.set('Authorization', `Bearer ${this.fastPathAccessToken}`)
         headers.set('X-Sourcegraph-Feature', 'code_completions')
+        process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
         addTraceparent(headers)
 
         const response = await fetch(url, {
