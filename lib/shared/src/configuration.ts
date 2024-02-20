@@ -34,6 +34,8 @@ export interface Configuration {
     autocompleteLanguages: Record<string, boolean>
     autocompleteAdvancedProvider: 'anthropic' | 'fireworks' | 'unstable-openai' | null
     autocompleteAdvancedModel: string | null
+    chatServerEndpoint: string | null
+    autocompleteAdvancedServerEndpoint: string | null
     autocompleteCompleteSuggestWidgetSelection?: boolean
     autocompleteFormatOnAccept?: boolean
 

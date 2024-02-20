@@ -40,7 +40,9 @@ export async function createProviderConfig(
             case 'fireworks': {
                 return createFireworksProviderConfig({
                     client,
-                    model: config.autocompleteAdvancedModel ?? model ?? null,
+                    // model: config.autocompleteAdvancedModel ?? model ?? null,
+                    model: config.autocompleteAdvancedModel ?? config.autocompleteAdvancedModel ?? null,
+                    serverEndpoint: config.autocompleteAdvancedServerEndpoint ?? config.autocompleteAdvancedServerEndpoint ?? null,
                     timeouts: config.autocompleteTimeouts,
                     authStatus,
                     config,

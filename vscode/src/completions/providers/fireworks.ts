@@ -43,6 +43,7 @@ import type { AuthStatus } from '../../chat/protocol'
 
 export interface FireworksOptions {
     model: FireworksModel
+    serverEndpoint: string | null
     maxContextTokens?: number
     client: CodeCompletionsClient
     timeouts: AutocompleteTimeouts
@@ -62,9 +63,11 @@ const MODEL_MAP = {
     starcoder: 'fireworks/starcoder',
     'starcoder-16b': 'fireworks/starcoder-16b',
     'starcoder-7b': 'fireworks/starcoder-7b',
+    'llama-2': 'llama-2',
+    'deepseek-coder': 'deepseek-coder',
 
     // Fireworks model identifiers
-    'llama-code-7b': 'fireworks/accounts/fireworks/models/llama-v2-7b-code',
+    'llama-code-7b': 'codellama',
     'llama-code-13b': 'fireworks/accounts/fireworks/models/llama-v2-13b-code',
     'llama-code-13b-instruct': 'fireworks/accounts/fireworks/models/llama-v2-13b-code-instruct',
     'mistral-7b-instruct-4k': 'fireworks/accounts/fireworks/models/mistral-7b-instruct-4k',
@@ -93,6 +96,8 @@ function getMaxContextTokens(model: FireworksModel): number {
             return 2048
         case 'mistral-7b-instruct-4k':
             return 2048
+        // case 'deepseek-coder':
+        //     return 16384
         default:
             return 1200
     }
@@ -107,6 +112,7 @@ const lineNumberDependentCompletionParams = getLineNumberDependentCompletionPara
 
 class FireworksProvider extends Provider {
     private model: FireworksModel
+    private serverEndpoint: string | null
     private promptChars: number
     private client: CodeCompletionsClient
     private timeouts?: AutocompleteTimeouts
@@ -115,7 +121,7 @@ class FireworksProvider extends Provider {
 
     constructor(
         options: ProviderOptions,
-        { model, maxContextTokens, client, timeouts, config, authStatus }: Required<FireworksOptions>
+        { model, maxContextTokens, client, timeouts, config, authStatus, serverEndpoint }: Required<FireworksOptions>
     ) {
         super(options)
         this.timeouts = timeouts
@@ -123,6 +129,7 @@ class FireworksProvider extends Provider {
         this.promptChars = tokensToChars(maxContextTokens - MAX_RESPONSE_TOKENS)
         this.client = client
         this.authStatus = authStatus
+        this.serverEndpoint = serverEndpoint
 
         const isNode = typeof process !== 'undefined'
         this.fastPathAccessToken =
@@ -267,6 +274,12 @@ class FireworksProvider extends Provider {
             // c.f. https://github.com/facebookresearch/codellama/blob/main/llama/generation.py#L402
             return `<PRE> ${intro}${prefix} <SUF>${suffix} <MID>`
         }
+        if (isDeepseekCoder(this.model)) {
+
+            const infillPrefix = intro + prefix
+
+            return `<｜fim▁begin｜>${infillPrefix}<｜fim▁hole｜>${suffix}<｜fim▁end｜>`
+        }
         if (this.model === 'mistral-7b-instruct-4k') {
             // This part is copied from the anthropic prompt but fitted into the Mistral instruction format
             const relativeFilePath = vscode.workspace.asRelativePath(this.options.document.fileName)
@@ -321,7 +334,7 @@ ${intro}${infillPrefix}${OPENING_CODE_TAG}${CLOSING_CODE_TAG}${infillSuffix}
             : 'https://cody-gateway.sourcegraph.com'
 
         // const url = `${gatewayUrl}/v1/completions/fireworks`
-        const url = 'https://192.168.73.2/dockerService/FastChat-jhadmin-ada87435-4341-4619-b6d2-c32cbd06da7d/v1/completions'
+        const url = `${this.serverEndpoint}v1/completions`
         const log = this.client.logger?.startCompletion(requestParams, url)
 
         // Convert the SG instance messages array back to the original prompt
@@ -329,8 +342,7 @@ ${intro}${infillPrefix}${OPENING_CODE_TAG}${CLOSING_CODE_TAG}${infillSuffix}
 
         // c.f. https://readme.fireworks.ai/reference/createcompletion
         const fireworksRequest = {
-            // model: requestParams.model?.replace(/^fireworks\//, ''),
-            model: "llama-2",
+            model: requestParams.model?.replace(/^fireworks\//, ''),
             prompt,
             max_tokens: requestParams.maxTokensToSample,
             temperature: requestParams.temperature,
@@ -406,7 +418,6 @@ ${intro}${infillPrefix}${OPENING_CODE_TAG}${CLOSING_CODE_TAG}${infillSuffix}
 
                 const parsed = JSON.parse(data) as FireworksSSEData
                 const choice = parsed.choices[0]
-
                 if (!choice) {
                     continue
                 }
@@ -511,6 +522,10 @@ function isStarCoderFamily(model: string): boolean {
 
 function isLlamaCode(model: string): boolean {
     return model.startsWith('llama-code')
+}
+
+function isDeepseekCoder(model: string): boolean {
+    return model.startsWith('deepseek-coder')
 }
 
 interface FireworksSSEData {

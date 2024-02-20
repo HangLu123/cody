@@ -112,5 +112,5 @@ export function parseSSEData(dataLine: string): Event | Error {
     }
     console.log(data,2)
 
-    return { type: 'completion', completion: data.choices[0].text, stopReason: '' }
+    return { type: 'completion', completion: data.choices[0].delta.content ? data.choices[0].delta.content: '', stopReason: '' }
 }

@@ -140,6 +140,7 @@ execFileSync(
     ],
     {
         stdio: 'inherit',
+        shell: false
     }
 )
 

@@ -48,7 +48,7 @@ export abstract class SourcegraphCompletionsClient {
 
     protected get completionsEndpoint(): string {
         // return new URL('/.api/completions/stream', this.config.serverEndpoint).href
-        return 'https://192.168.73.2/dockerService/FastChat-jhadmin-ada87435-4341-4619-b6d2-c32cbd06da7d/v1/completions'
+        return `${this.config.chatServerEndpoint}v1/chat/completions`
     }
 
     protected sendEvents(events: Event[], cb: CompletionCallbacks): void {

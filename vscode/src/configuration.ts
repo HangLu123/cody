@@ -94,6 +94,8 @@ export function getConfiguration(
         editorTitleCommandIcon: config.get(CONFIG_KEY.editorTitleCommandIcon, true),
         autocompleteAdvancedProvider,
         autocompleteAdvancedModel: config.get<string | null>(CONFIG_KEY.autocompleteAdvancedModel, null),
+        autocompleteAdvancedServerEndpoint: config.get<string | null>(CONFIG_KEY.autocompleteAdvancedServerEndpoint, null),
+        chatServerEndpoint: config.get<string | null>(CONFIG_KEY.chatServerEndpoint, null),
         autocompleteCompleteSuggestWidgetSelection: config.get(
             CONFIG_KEY.autocompleteCompleteSuggestWidgetSelection,
             true
