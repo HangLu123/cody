@@ -1,3 +1,4 @@
+import * as vscode from 'vscode'
 import type { ConfigurationWithAccessToken } from '../../configuration'
 
 import type {
@@ -48,7 +49,7 @@ export abstract class SourcegraphCompletionsClient {
 
     protected get completionsEndpoint(): string {
         // return new URL('/.api/completions/stream', this.config.serverEndpoint).href
-        return `${this.config.chatServerEndpoint}v1/chat/completions`
+        return `${vscode.workspace.getConfiguration().get('cody.chat.serverEndpoint')}v1/chat/completions`
     }
 
     protected sendEvents(events: Event[], cb: CompletionCallbacks): void {

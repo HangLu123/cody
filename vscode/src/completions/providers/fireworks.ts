@@ -43,7 +43,6 @@ import type { AuthStatus } from '../../chat/protocol'
 
 export interface FireworksOptions {
     model: FireworksModel
-    serverEndpoint: string | null
     maxContextTokens?: number
     client: CodeCompletionsClient
     timeouts: AutocompleteTimeouts
@@ -63,11 +62,9 @@ const MODEL_MAP = {
     starcoder: 'fireworks/starcoder',
     'starcoder-16b': 'fireworks/starcoder-16b',
     'starcoder-7b': 'fireworks/starcoder-7b',
-    'llama-2': 'llama-2',
-    'deepseek-coder': 'deepseek-coder',
 
     // Fireworks model identifiers
-    'llama-code-7b': 'codellama',
+    'llama-code-7b': 'fireworks/accounts/fireworks/models/llama-v2-7b-code',
     'llama-code-13b': 'fireworks/accounts/fireworks/models/llama-v2-13b-code',
     'llama-code-13b-instruct': 'fireworks/accounts/fireworks/models/llama-v2-13b-code-instruct',
     'mistral-7b-instruct-4k': 'fireworks/accounts/fireworks/models/mistral-7b-instruct-4k',
@@ -112,7 +109,6 @@ const lineNumberDependentCompletionParams = getLineNumberDependentCompletionPara
 
 class FireworksProvider extends Provider {
     private model: FireworksModel
-    private serverEndpoint: string | null
     private promptChars: number
     private client: CodeCompletionsClient
     private timeouts?: AutocompleteTimeouts
@@ -121,7 +117,7 @@ class FireworksProvider extends Provider {
 
     constructor(
         options: ProviderOptions,
-        { model, maxContextTokens, client, timeouts, config, authStatus, serverEndpoint }: Required<FireworksOptions>
+        { model, maxContextTokens, client, timeouts, config, authStatus }: Required<FireworksOptions>
     ) {
         super(options)
         this.timeouts = timeouts
@@ -129,7 +125,6 @@ class FireworksProvider extends Provider {
         this.promptChars = tokensToChars(maxContextTokens - MAX_RESPONSE_TOKENS)
         this.client = client
         this.authStatus = authStatus
-        this.serverEndpoint = serverEndpoint
 
         const isNode = typeof process !== 'undefined'
         this.fastPathAccessToken =
@@ -219,7 +214,7 @@ class FireworksProvider extends Provider {
             model:
                 this.model === 'starcoder-hybrid'
                     ? MODEL_MAP[multiline ? 'starcoder-16b' : 'starcoder-7b']
-                    : MODEL_MAP[this.model],
+                    : this.model,
         }
 
         tracer?.params(requestParams)
@@ -334,7 +329,7 @@ ${intro}${infillPrefix}${OPENING_CODE_TAG}${CLOSING_CODE_TAG}${infillSuffix}
             : 'https://cody-gateway.sourcegraph.com'
 
         // const url = `${gatewayUrl}/v1/completions/fireworks`
-        const url = `${this.serverEndpoint}v1/completions`
+        const url = `${vscode.workspace.getConfiguration().get('cody.autocomplete.advanced.serverEndpoint')}v1/completions`
         const log = this.client.logger?.startCompletion(requestParams, url)
 
         // Convert the SG instance messages array back to the original prompt
@@ -467,14 +462,7 @@ export function createProviderConfig({
 }: Omit<FireworksOptions, 'model' | 'maxContextTokens'> & {
     model: string | null
 }): ProviderConfig {
-    const resolvedModel =
-        model === null || model === ''
-            ? 'starcoder-hybrid'
-            : model === 'starcoder-hybrid'
-              ? 'starcoder-hybrid'
-              : Object.prototype.hasOwnProperty.call(MODEL_MAP, model)
-                  ? (model as keyof typeof MODEL_MAP)
-                  : null
+    const resolvedModel = model
 
     if (resolvedModel === null) {
         throw new Error(`Unknown model: \`${model}\``)
