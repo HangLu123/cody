@@ -14,10 +14,8 @@ interface ErrorEvent {
 export type Event = DoneEvent | CompletionEvent | ErrorEvent
 
 export interface Message {
-    speaker?: 'human' | 'assistant'
+    speaker: 'human' | 'assistant'
     text?: string
-    role?: 'user' | 'system'
-    content?: string
 }
 
 export interface CompletionResponse {
@@ -28,7 +26,7 @@ export interface CompletionResponse {
 export interface CompletionParameters {
     fast?: boolean
     messages: Message[]
-    maxTokensToSample?: number
+    maxTokensToSample: number
     temperature?: number
     stopSequences?: string[]
     topK?: number
