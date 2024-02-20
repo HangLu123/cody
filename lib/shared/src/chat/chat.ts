@@ -9,17 +9,8 @@ import type {
 
 type ChatParameters = Omit<CompletionParameters, 'messages'>
 
-// const DEFAULT_CHAT_COMPLETION_PARAMETERS: ChatParameters = {
-//     temperature: 0.2,
-//     maxTokensToSample: ANSWER_TOKENS,
-//     topK: -1,
-//     topP: -1,
-// }
 export class ChatClient {
-    private config: any
-    constructor(private completions: SourcegraphCompletionsClient) {
-        this.config = vscode.workspace.getConfiguration()
-    }
+    constructor(private completions: SourcegraphCompletionsClient) {}
 
     public chat(
         messages: Message[],
@@ -27,11 +18,11 @@ export class ChatClient {
         abortSignal?: AbortSignal
     ): AsyncGenerator<CompletionGeneratorValue> {
         const DEFAULT_CHAT_COMPLETION_PARAMETERS: any = {
-            "model":this.config.get('cody.chat.model'),
-            "max_tokens":this.config.get('cody.chat.max_tokens'),
-            "temperature":this.config.get('cody.chat.temperature'),
-            "top_p": this.config.get('cody.chat.top_p'),
-            "top_k": this.config.get('cody.chat.top_k'),
+            "model":vscode.workspace.getConfiguration().get('cody.chat.model'),
+            "max_tokens":vscode.workspace.getConfiguration().get('cody.chat.max_tokens'),
+            "temperature":vscode.workspace.getConfiguration().get('cody.chat.temperature'),
+            "top_p": vscode.workspace.getConfiguration().get('cody.chat.top_p'),
+            "top_k": vscode.workspace.getConfiguration().get('cody.chat.top_k'),
             "stream":true
         }
         messages = messages.map(ele=>{
@@ -50,7 +41,7 @@ export class ChatClient {
                     ? messages
                     : messages.slice(0, -1)
                 : isLastMessageFromHuman
-                  ? messages.concat([{ role: 'system' }])
+                  ? messages.concat([{ speaker: 'assistant' }])
                   : messages
 
         return this.completions.stream(
