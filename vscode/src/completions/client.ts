@@ -32,8 +32,7 @@ export function createClient(
         params: CodeCompletionsParams,
         abortController: AbortController
     ): CompletionResponseGenerator {
-        // const url = new URL('/.api/completions/code', config.serverEndpoint).href
-        const url = 'https://192.168.73.2/dockerService/FastChat-jhadmin-ada87435-4341-4619-b6d2-c32cbd06da7d/v1/completions'
+        const url = new URL('/.api/completions/code', config.serverEndpoint).href
         const log = logger?.startCompletion(params, url)
         const { signal } = abortController
 
@@ -68,23 +67,10 @@ export function createClient(
         if (enableStreaming) {
             headers.set('Accept-Encoding', 'gzip;q=0')
         }
-        console.log(123)
-        const finalParams = {
-            model:"llama-2",
-            "prompt":"你好",
-            "max_tokens":30,
-            "temperature":0,
-            "stream":true,
-            timeoutMs:5000,
-            topK:0,
-            messages:params.messages
-
-        }
-        process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
         const response = await fetch(url, {
             method: 'POST',
             body: JSON.stringify({
-                ...finalParams,
+                ...params,
                 stream: enableStreaming,
             }),
             headers,
@@ -116,8 +102,7 @@ export function createClient(
 
         // For backward compatibility, we have to check if the response is an SSE stream or a
         // regular JSON payload. This ensures that the request also works against older backends
-        // const isStreamingResponse = response.headers.get('content-type') === 'text/event-stream'
-        const isStreamingResponse = response.headers.get('content-type')?.startsWith('text/event-stream')
+        const isStreamingResponse = response.headers.get('content-type') === 'text/event-stream'
 
         let completionResponse: CompletionResponse | undefined = undefined
 
