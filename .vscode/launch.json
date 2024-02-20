@@ -15,6 +15,10 @@
         "CODY_DEBUG_ENABLE": "true"
         // Enable the Node debug protocol for the TypeScript server:
         // "TSS_DEBUG": "5859"
+        // Let extension behave like you're on dotcom when connected locally:
+        // "TESTING_DOTCOM_URL": "https://sourcegraph.test:3443"
+        // Enable Sentry in local development mode:
+        // "ENABLE_SENTRY": "true"
       }
     },
     {
@@ -65,7 +69,7 @@
       // ${relativeFile} will guarantee the "current" file, but fileBaseNameNoExtension
       // can be convenient because running with a file like "graph-section-observer.ts"
       // (the implementation, not the test) will run the correct tests.
-      "args": ["run", "${fileBasenameNoExtension}"],
+      "args": ["run", "${fileBasenameNoExtension}", "--disable-console-intercept"],
       "smartStep": true
     }
   ]

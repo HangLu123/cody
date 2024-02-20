@@ -10,6 +10,7 @@ import {
     setLogger,
     type ConfigurationWithAccessToken,
     ConfigFeaturesSingleton,
+    type ChatEventSource,
 } from '@sourcegraph/cody-shared'
 
 import { ChatManager, CodyChatPanelViewType } from './chat/chat-view/ChatManager'
@@ -53,6 +54,7 @@ import { newCodyCommandArgs } from './commands/utils/get-commands'
 import type { DefaultCodyCommands } from '@sourcegraph/cody-shared/src/commands/types'
 import type { FixupTask } from './non-stop/FixupTask'
 import { EnterpriseContextFactory } from './context/enterprise-context-factory'
+import { CodyProExpirationNotifications } from './notifications/cody-pro-expiration'
 import {
     executeExplainCommand,
     executeTestEditCommand,
@@ -218,18 +220,15 @@ const register = async (
         guardrails
     )
 
-    const ghostHintDecorator = new GhostHintDecorator()
-    disposables.push(
+    const ghostHintDecorator = new GhostHintDecorator(authProvider)
+    const editorManager = new EditManager({
+        chat: chatClient,
+        editor,
+        contextProvider,
         ghostHintDecorator,
-        new EditManager({
-            chat: chatClient,
-            editor,
-            contextProvider,
-            ghostHintDecorator,
-            authProvider,
-        }),
-        new CodeActionProvider({ contextProvider })
-    )
+        authProvider,
+    })
+    disposables.push(ghostHintDecorator, editorManager, new CodeActionProvider({ contextProvider }))
 
     let oldConfig = JSON.stringify(initialConfig)
     async function onConfigurationChange(newConfig: ConfigurationWithAccessToken): Promise<void> {
@@ -286,6 +285,7 @@ const register = async (
     authProvider.addChangeListener(async (authStatus: AuthStatus) => {
         // Chat Manager uses Simple Context Provider
         await chatManager.syncAuthStatus(authStatus)
+        editorManager.syncAuthStatus(authStatus)
         // Update context provider first it will also update the configuration
         await contextProvider.syncAuthStatus()
         const parallelPromises: Promise<void>[] = []
@@ -436,7 +436,7 @@ const register = async (
             }
         ),
 
-        // Register URI Handler (vscode://sourcegraph.cody-ai)
+        // Register URI Handler (e.g. vscode://sourcegraph.cody-ai)
         vscode.window.registerUriHandler({
             handleUri: async (uri: vscode.Uri) => {
                 if (uri.path === '/app-done') {
@@ -505,6 +505,22 @@ const register = async (
                 // authStatus.userCanUpgrade = !res.codyProEnabled
                 void chatManager.syncAuthStatus(authStatus)
             }
+        }),
+        new CodyProExpirationNotifications(
+            graphqlClient,
+            authProvider,
+            featureFlagProvider,
+            vscode.window.showInformationMessage,
+            vscode.env.openExternal
+        ),
+        // For register sidebar clicks
+        vscode.commands.registerCommand('cody.sidebar.click', (name: string, command: string) => {
+            const source: ChatEventSource = 'sidebar'
+            telemetryService.log(`CodyVSCodeExtension:command:${name}:clicked`, { source })
+            telemetryRecorder.recordEvent(`cody.command.${name}`, 'clicked', {
+                privateMetadata: { source },
+            })
+            void vscode.commands.executeCommand(command, [source])
         })
     )
 
@@ -532,16 +548,27 @@ const register = async (
     authProvider.addChangeListener(() => updateAuthStatusBarIndicator())
     updateAuthStatusBarIndicator()
 
-    let completionsProvider: vscode.Disposable | null = null
     let setupAutocompleteQueue = Promise.resolve() // Create a promise chain to avoid parallel execution
-    disposables.push({ dispose: () => completionsProvider?.dispose() })
+
+    let autocompleteDisposables: vscode.Disposable[] = []
+    function disposeAutocomplete(): void {
+        if (autocompleteDisposables) {
+            for (const d of autocompleteDisposables) {
+                d.dispose()
+            }
+            autocompleteDisposables = []
+        }
+    }
+    disposables.push({
+        dispose: disposeAutocomplete,
+    })
+
     function setupAutocomplete(): Promise<void> {
         setupAutocompleteQueue = setupAutocompleteQueue
             .then(async () => {
                 const config = await getFullConfig()
                 if (!config.autocomplete) {
-                    completionsProvider?.dispose()
-                    completionsProvider = null
+                    disposeAutocomplete()
                     if (config.isRunningInsideAgent) {
                         throw new Error(
                             'The setting `config.autocomplete` evaluated to `false`. It must be true when running inside the agent. ' +
@@ -551,22 +578,27 @@ const register = async (
                     return
                 }
 
-                if (completionsProvider !== null) {
-                    // If completions are already initialized and still enabled, we
-                    // need to reset the completion provider.
-                    completionsProvider.dispose()
-                }
+                // If completions are already initialized and still enabled, we need to reset the
+                // completion provider.
+                disposeAutocomplete()
 
-                completionsProvider = await createInlineCompletionItemProvider({
-                    config,
-                    client: codeCompletionsClient,
-                    statusBar,
-                    authProvider,
-                    triggerNotice: notice => {
-                        void chatManager.triggerNotice(notice)
-                    },
-                    createBfgRetriever: platform.createBfgRetriever,
-                })
+                const autocompleteFeatureFlagChangeSubscriber = featureFlagProvider.onFeatureFlagChanged(
+                    'cody-autocomplete',
+                    setupAutocomplete
+                )
+                autocompleteDisposables.push({ dispose: autocompleteFeatureFlagChangeSubscriber })
+                autocompleteDisposables.push(
+                    await createInlineCompletionItemProvider({
+                        config,
+                        client: codeCompletionsClient,
+                        statusBar,
+                        authProvider,
+                        triggerNotice: notice => {
+                            void chatManager.triggerNotice(notice)
+                        },
+                        createBfgRetriever: platform.createBfgRetriever,
+                    })
+                )
             })
             .catch(error => {
                 console.error('Error creating inline completion item provider:', error)

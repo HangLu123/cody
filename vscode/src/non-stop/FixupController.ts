@@ -17,7 +17,7 @@ import { countCode } from '../services/utils/code-count'
 import { getEditorInsertSpaces, getEditorTabSize } from '../utils'
 
 import { computeDiff, type Diff } from './diff'
-import { FixupCodeLenses } from './FixupCodeLenses'
+import { FixupCodeLenses } from './codelenses/provider'
 import { ContentProvider } from './FixupContentStore'
 import { FixupDecorator } from './FixupDecorator'
 import { FixupDocumentEditObserver } from './FixupDocumentEditObserver'
@@ -26,9 +26,10 @@ import { FixupFileObserver } from './FixupFileObserver'
 import { FixupScheduler } from './FixupScheduler'
 import { FixupTask, type taskID } from './FixupTask'
 import type { FixupFileCollection, FixupIdleTaskRunner, FixupTextChanged } from './roles'
-import { CodyTaskState } from './utils'
+import { CodyTaskState, getMinimumDistanceToRangeBoundary } from './utils'
 import { getInput } from '../edit/input/get-input'
 import type { AuthProvider } from '../services/AuthProvider'
+import { ACTIONABLE_TASK_STATES, CANCELABLE_TASK_STATES } from './codelenses/constants'
 
 // This class acts as the factory for Fixup Tasks and handles communication between the Tree View and editor
 export class FixupController
@@ -104,6 +105,34 @@ export class FixupController
                 })
                 telemetryRecorder.recordEvent('cody.fixup.codeLens', 'skipFormatting')
                 return this.skipFormatting(id)
+            }),
+            vscode.commands.registerCommand('cody.fixup.cancelNearest', () => {
+                const nearestTask = this.getNearestTask({ filter: { states: CANCELABLE_TASK_STATES } })
+                if (!nearestTask) {
+                    return
+                }
+                return vscode.commands.executeCommand('cody.fixup.codelens.cancel', nearestTask.id)
+            }),
+            vscode.commands.registerCommand('cody.fixup.acceptNearest', () => {
+                const nearestTask = this.getNearestTask({ filter: { states: ACTIONABLE_TASK_STATES } })
+                if (!nearestTask) {
+                    return
+                }
+                return vscode.commands.executeCommand('cody.fixup.codelens.accept', nearestTask.id)
+            }),
+            vscode.commands.registerCommand('cody.fixup.retryNearest', () => {
+                const nearestTask = this.getNearestTask({ filter: { states: ACTIONABLE_TASK_STATES } })
+                if (!nearestTask) {
+                    return
+                }
+                return vscode.commands.executeCommand('cody.fixup.codelens.retry', nearestTask.id)
+            }),
+            vscode.commands.registerCommand('cody.fixup.undoNearest', () => {
+                const nearestTask = this.getNearestTask({ filter: { states: ACTIONABLE_TASK_STATES } })
+                if (!nearestTask) {
+                    return
+                }
+                return vscode.commands.executeCommand('cody.fixup.codelens.undo', nearestTask.id)
             })
         )
         // Observe file renaming and deletion
@@ -797,17 +826,6 @@ export class FixupController
         if (state === 'complete') {
             task.inProgressReplacement = undefined
             task.replacement = replacementText
-            telemetryService.log('CodyVSCodeExtension:fixupResponse:hasCode', {
-                ...countCode(replacementText),
-                source: task.source,
-                hasV2Event: true,
-            })
-            telemetryRecorder.recordEvent('cody.fixup.response', 'hasCode', {
-                metadata: countCode(replacementText),
-                privateMetadata: {
-                    source: task.source,
-                },
-            })
             return this.streamTask(task, state)
         }
 
@@ -844,17 +862,6 @@ export class FixupController
                 task.inProgressReplacement = undefined
                 task.replacement = text
                 this.setTaskState(task, CodyTaskState.applying)
-                telemetryService.log('CodyVSCodeExtension:fixupResponse:hasCode', {
-                    ...countCode(text),
-                    source: task.source,
-                    hasV2Event: true,
-                })
-                telemetryRecorder.recordEvent('cody.fixup.response', 'hasCode', {
-                    metadata: countCode(text),
-                    privateMetadata: {
-                        source: task.source,
-                    },
-                })
                 break
         }
         this.textDidChange(task)
@@ -968,6 +975,9 @@ export class FixupController
         for (const [file, editors] of editorsByFile.entries()) {
             this.decorator.didChangeVisibleTextEditors(file, editors)
         }
+
+        // Update shortcut enablement for visible files
+        this.codelenses.updateKeyboardShortcutEnablement([...editorsByFile.keys()])
     }
 
     private updateDiffs(): void {
@@ -1099,8 +1109,8 @@ export class FixupController
         // Revert and remove the previous task
         await this.undoTask(task)
 
-        void executeEdit(
-            {
+        void executeEdit({
+            configuration: {
                 range: updatedRange,
                 instruction: input.instruction,
                 userContextFiles: input.userContextFiles,
@@ -1109,8 +1119,8 @@ export class FixupController
                 mode: task.mode,
                 model: input.model,
             },
-            'code-lens'
-        )
+            source: 'code-lens',
+        })
     }
 
     private setTaskState(task: FixupTask, state: CodyTaskState): void {
@@ -1150,6 +1160,33 @@ export class FixupController
             this.updateDiffs() // Flush any diff updates first, so they aren't scheduled after the completion.
             this.decorator.didCompleteTask(task)
         }
+    }
+
+    private getNearestTask({ filter }: { filter: { states: CodyTaskState[] } }): FixupTask | undefined {
+        const editor = vscode.window.activeTextEditor
+        if (!editor) {
+            return
+        }
+
+        const fixupFile = this.maybeFileForUri(editor.document.uri)
+        if (!fixupFile) {
+            return
+        }
+
+        const position = editor.selection.active
+
+        /**
+         * Get the task closest to the current cursor position from the tasks associated with the current file.
+         */
+        const closestTask = this.tasksForFile(fixupFile)
+            .filter(({ state }) => filter.states.includes(state))
+            .sort(
+                (a, b) =>
+                    getMinimumDistanceToRangeBoundary(position, a.selectionRange) -
+                    getMinimumDistanceToRangeBoundary(position, b.selectionRange)
+            )[0]
+
+        return closestTask
     }
 
     private reset(): void {
