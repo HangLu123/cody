@@ -67,6 +67,7 @@ export function createClient(
         if (enableStreaming) {
             headers.set('Accept-Encoding', 'gzip;q=0')
         }
+
         const response = await fetch(url, {
             method: 'POST',
             body: JSON.stringify({
