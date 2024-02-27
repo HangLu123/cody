@@ -1,6 +1,6 @@
 import type { Span } from '@opentelemetry/api'
 import type { ConfigurationWithAccessToken } from '../../configuration'
-
+import * as vscode from 'vscode'
 import { recordErrorToSpan } from '../../tracing'
 import type {
     CompletionCallbacks,
@@ -49,7 +49,8 @@ export abstract class SourcegraphCompletionsClient {
     }
 
     protected get completionsEndpoint(): string {
-        return new URL('/.api/completions/stream', this.config.serverEndpoint).href
+        // return new URL('/.api/completions/stream', this.config.serverEndpoint).href
+        return `${vscode.workspace.getConfiguration().get('cody.chat.serverEndpoint')}v1/chat/completions`
     }
 
     protected sendEvents(events: Event[], cb: CompletionCallbacks, span?: Span): void {
@@ -89,7 +90,7 @@ export abstract class SourcegraphCompletionsClient {
     ): void
 
     public stream(
-        params: CompletionParameters,
+        params: any,
         signal?: AbortSignal
     ): AsyncGenerator<CompletionGeneratorValue> {
         // This is a technique to convert a function that takes callbacks to an async generator.

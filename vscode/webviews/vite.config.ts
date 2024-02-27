@@ -28,6 +28,7 @@ export default defineProjectWithDefaults(__dirname, {
             output: {
                 entryFileNames: '[name].js',
             },
+            external: ['vscode'],
         },
     },
 })

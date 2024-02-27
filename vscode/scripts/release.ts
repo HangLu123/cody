@@ -34,7 +34,8 @@ enum ReleaseType {
     Stable = 'stable',
     Insiders = 'insiders',
 }
-const releaseType = process.env.CODY_RELEASE_TYPE
+// const releaseType = process.env.CODY_RELEASE_TYPE
+const releaseType = 'insiders'
 function validateReleaseType(releaseType: string | undefined): asserts releaseType is ReleaseType {
     if (!releaseType || !Object.values(ReleaseType).includes(releaseType as ReleaseType)) {
         console.error(
@@ -83,7 +84,7 @@ if (customDefaultSettingsFile) {
     writeJsonFileSync('package.json', packageJSON)
 }
 
-if (releaseType === ReleaseType.Stable) {
+if (!releaseType) {
     console.log('Removing experimental settings before the stable release...')
 
     try {
@@ -104,8 +105,8 @@ if (releaseType === ReleaseType.Stable) {
 
 // Tokens are stored in the GitHub repository's secrets.
 const tokens = {
-    vscode: dryRun ? 'dry-run' : process.env.VSCODE_MARKETPLACE_TOKEN,
-    openvsx: dryRun ? 'dry-run' : process.env.VSCODE_OPENVSX_TOKEN,
+    vscode: dryRun ? 'dry-run' : 'dry-run',
+    openvsx: dryRun ? 'dry-run' : 'dry-run',
 }
 if (!tokens.vscode || !tokens.openvsx) {
     console.error('Missing required tokens.')
@@ -140,6 +141,7 @@ execFileSync(
     ],
     {
         stdio: 'inherit',
+        shell: true
     }
 )
 
@@ -160,6 +162,7 @@ if (dryRun) {
         {
             env: { ...process.env, VSCE_PAT: tokens.vscode },
             stdio: 'inherit',
+            shell: true
         }
     )
 
@@ -176,6 +179,7 @@ if (dryRun) {
         ],
         {
             stdio: 'inherit',
+            shell: true
         }
     )
 }

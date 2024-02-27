@@ -2,7 +2,6 @@ import http from 'http'
 import https from 'https'
 
 import { onAbort } from '../../common/abortController'
-import { logError } from '../../logger'
 import { isError } from '../../utils'
 import { RateLimitError } from '../errors'
 import { customUserAgent } from '../graphql/client'
@@ -10,8 +9,9 @@ import { toPartialUtf8String } from '../utils'
 
 import { getTraceparentHeaders, recordErrorToSpan, tracer } from '../../tracing'
 import { SourcegraphCompletionsClient } from './client'
-import { parseEvents } from './parse'
-import type { CompletionCallbacks, CompletionParameters } from './types'
+// import { parseEvents } from './parse'
+import { parseSSEData } from './parse'
+import type { CompletionCallbacks, CompletionParameters  } from './types'
 
 const isTemperatureZero = process.env.CODY_TEMPERATURE_ZERO === 'true'
 
@@ -57,7 +57,7 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                     didSendError = true
                 }
             }
-
+	    process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
             const request = requestFn(
                 this.completionsEndpoint,
                 {
@@ -148,6 +148,7 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                     let bufferBin = Buffer.of()
                     // Text which has not been decoded as a server-sent event (SSE)
                     let bufferText = ''
+                    let completionText = ''
 
                     res.on('data', chunk => {
                         if (!(chunk instanceof Buffer)) {
@@ -156,24 +157,24 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                         // text/event-stream messages are always UTF-8, but a chunk
                         // may terminate in the middle of a character
                         const { str, buf } = toPartialUtf8String(Buffer.concat([bufferBin, chunk]))
-                        bufferText += str
+                    // bufferText += str
                         bufferBin = buf
 
-                        const parseResult = parseEvents(bufferText)
-                        if (isError(parseResult)) {
-                            logError(
-                                'SourcegraphNodeCompletionsClient',
-                                'isError(parseEvents(bufferText))',
-                                parseResult
-                            )
-                            return
-                        }
+                    const event = parseSSEData(bufferText == '' ? str : bufferText + str)
+                    if (isError(event)) {
+                        console.error(event)
+                        bufferText += str
+                        return
+                    }
 
                         didSendMessage = true
-                        log?.onEvents(parseResult.events)
-                        this.sendEvents(parseResult.events, cb, span)
-                        bufferText = parseResult.remainingBuffer
-                    })
+                    if (event.type == "completion") {
+                        completionText += event.completion
+                        event.completion = completionText
+                    }
+                    bufferText = ''
+                    this.sendEvents([event], cb, span)
+                })
 
                     res.on('error', e => handleError(e))
                 }

@@ -295,13 +295,14 @@ export interface LocalEnv {
 }
 
 export function isLoggedIn(authStatus: AuthStatus): boolean {
-    if (!authStatus.siteHasCodyEnabled) {
-        return false
-    }
-    return (
-        authStatus.authenticated &&
-        (authStatus.requiresVerifiedEmail ? authStatus.hasVerifiedEmail : true)
-    )
+    // if (!authStatus.siteHasCodyEnabled) {
+    //     return false
+    // }
+    // return (
+    //     authStatus.authenticated &&
+    //     (authStatus.requiresVerifiedEmail ? authStatus.hasVerifiedEmail : true)
+    // )
+    return true
 }
 
 export type AuthMethod = 'dotcom' | 'github' | 'gitlab' | 'google'

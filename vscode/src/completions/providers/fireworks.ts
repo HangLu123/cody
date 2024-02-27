@@ -209,7 +209,7 @@ class FireworksProvider extends Provider {
             model:
                 this.model === 'starcoder-hybrid'
                     ? MODEL_MAP[multiline ? 'starcoder-16b' : 'starcoder-7b']
-                    : MODEL_MAP[this.model],
+                    : this.model,
         }
 
         tracer?.params(requestParams)
@@ -218,9 +218,7 @@ class FireworksProvider extends Provider {
             const abortController = forkSignal(abortSignal)
 
             const completionResponseGenerator = generatorWithTimeout(
-                this.fastPathAccessToken
-                    ? this.createFastPathClient(requestParams, abortController)
-                    : this.createDefaultClient(requestParams, abortController),
+                this.createFastPathClient(requestParams, abortController),
                 requestParams.timeoutMs,
                 abortController
             )
@@ -266,6 +264,12 @@ class FireworksProvider extends Provider {
             // c.f. https://github.com/facebookresearch/codellama/blob/main/llama/generation.py#L402
             return `<PRE> ${intro}${prefix} <SUF>${suffix} <MID>`
         }
+        if (isDeepseekCoder(this.model)) {
+
+            const infillPrefix = intro + prefix
+
+            return `<£üfim¨xbegin£ü>${infillPrefix}<£üfim¨xhole£ü>${suffix}<£üfim¨xend£ü>`
+        }
 
         console.error('Could not generate infilling prompt for', this.model)
         return `${intro}${prefix}`
@@ -279,13 +283,6 @@ class FireworksProvider extends Provider {
             return content.replace(EOT_LLAMA_CODE, '')
         }
         return content
-    }
-
-    private createDefaultClient(
-        requestParams: CodeCompletionsParams,
-        abortController: AbortController
-    ): CompletionResponseGenerator {
-        return this.client.complete(requestParams, abortController)
     }
 
     // When using the fast path, the Cody client talks directly to Cody Gateway. Since CG only
@@ -302,11 +299,9 @@ class FireworksProvider extends Provider {
         const isLocalInstance =
             this.authStatus.endpoint?.includes('sourcegraph.test') ||
             this.authStatus.endpoint?.includes('localhost')
-        const gatewayUrl = isLocalInstance
-            ? 'http://localhost:9992'
-            : 'https://cody-gateway.sourcegraph.com'
 
-        const url = `${gatewayUrl}/v1/completions/fireworks`
+        // const url = `${gatewayUrl}/v1/completions/fireworks`
+        const url = `${vscode.workspace.getConfiguration().get('cody.autocomplete.advanced.serverEndpoint')}v1/completions`
         const log = this.client.logger?.startCompletion(requestParams, url)
 
         // The async generator can not use arrow function syntax so we close over the context
@@ -318,18 +313,15 @@ class FireworksProvider extends Provider {
                 // Convert the SG instance messages array back to the original prompt
                 const prompt = requestParams.messages[0]!.text!
 
-                // c.f. https://readme.fireworks.ai/reference/createcompletion
-                const fireworksRequest = {
-                    model: requestParams.model?.replace(/^fireworks\//, ''),
-                    prompt,
-                    max_tokens: requestParams.maxTokensToSample,
-                    echo: false,
-                    temperature: requestParams.temperature,
-                    top_p: requestParams.topP,
-                    top_k: requestParams.topK,
-                    stop: requestParams.stopSequences,
-                    stream: true,
-                }
+        // c.f. https://readme.fireworks.ai/reference/createcompletion
+        const fireworksRequest = {
+            model: requestParams.model?.replace(/^fireworks\//, ''),
+            prompt,
+            max_tokens: requestParams.maxTokensToSample,
+            temperature: requestParams.temperature,
+            top_k: 1,
+            stream: true,
+        }
 
                 const headers = new Headers()
                 // Force HTTP connection reuse to reduce latency.
@@ -481,14 +473,7 @@ export function createProviderConfig({
 }: Omit<FireworksOptions, 'model' | 'maxContextTokens'> & {
     model: string | null
 }): ProviderConfig {
-    const resolvedModel =
-        model === null || model === ''
-            ? 'starcoder-hybrid'
-            : model === 'starcoder-hybrid'
-              ? 'starcoder-hybrid'
-              : Object.prototype.hasOwnProperty.call(MODEL_MAP, model)
-                  ? (model as keyof typeof MODEL_MAP)
-                  : null
+    const resolvedModel:any = model
 
     if (resolvedModel === null) {
         throw new Error(`Unknown model: \`${model}\``)
@@ -523,6 +508,10 @@ function isStarCoderFamily(model: string): boolean {
 
 function isLlamaCode(model: string): boolean {
     return model.startsWith('llama-code')
+}
+
+function isDeepseekCoder(model: string): boolean {
+    return model.startsWith('deepseek-coder')
 }
 
 interface FireworksSSEData {

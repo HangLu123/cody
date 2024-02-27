@@ -23,8 +23,8 @@ export function newAuthStatus(
     isCodyEnabled: boolean,
     userCanUpgrade: boolean,
     version: string,
-    avatarURL: string,
-    username: string,
+    avatarURL: string|undefined,
+    username?: string,
     displayName?: string,
     primaryEmail?: string,
     configOverwrites?: AuthStatus['configOverwrites']
@@ -32,7 +32,7 @@ export function newAuthStatus(
     if (!user) {
         return { ...unauthenticatedStatus, endpoint }
     }
-    const authStatus: AuthStatus = { ...defaultAuthStatus, endpoint }
+    const authStatus: any = { ...defaultAuthStatus, endpoint }
     // Set values and return early
     authStatus.authenticated = user
     authStatus.showInvalidAccessTokenError = !user

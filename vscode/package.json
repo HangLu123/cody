@@ -1,9 +1,8 @@
 {
-  "name": "cody-ai",
+    "name": "jh-cody",
   "private": true,
-  "displayName": "Cody AI",
-  "version": "1.6.0",
-  "publisher": "sourcegraph",
+    "version": "1.2.3",
+    "publisher": "jhai",
   "license": "Apache-2.0",
   "icon": "resources/cody.png",
   "description": "Code AI with codebase context",
@@ -29,7 +28,7 @@
     "_build:webviews": "vite -c webviews/vite.config.ts build",
     "release": "ts-node-transpile-only ./scripts/release.ts",
     "download-wasm": "ts-node-transpile-only ./scripts/download-wasm-modules.ts",
-    "release:dry-run": "pnpm run download-wasm && CODY_RELEASE_DRY_RUN=1 ts-node ./scripts/release.ts",
+        "release:dry-run": "pnpm run download-wasm && set CODY_RELEASE_DRY_RUN=1 && ts-node ./scripts/release.ts",
     "storybook": "storybook dev -p 6007 --no-open --no-version-updates --no-release-notes",
     "test:e2e": "tsc --build && node dist/tsc/test/e2e/install-deps.js && pnpm run -s build:dev:desktop && playwright test",
     "test:integration": "tsc --build ./test/integration && pnpm run -s build:dev:desktop && node --inspect -r ts-node/register dist/tsc/test/integration/main.js",
@@ -910,7 +909,7 @@
         },
         "cody.autocomplete.advanced.provider": {
           "type": "string",
-          "default": null,
+                    "default": "fireworks",
           "enum": [null, "anthropic", "fireworks", "unstable-openai", "experimental-ollama"],
           "markdownDescription": "The provider used for code autocomplete. Most providers other than `anthropic` require the `cody.autocomplete.advanced.serverEndpoint` and `cody.autocomplete.advanced.accessToken` settings to also be set. Check the Cody output channel for error messages if autocomplete is not working as expected."
         },
@@ -924,8 +923,11 @@
         },
         "cody.autocomplete.advanced.model": {
           "type": "string",
-          "default": null,
-          "enum": [null, "starcoder-16b", "starcoder-7b", "llama-code-13b"],
+                    "default": "deepseek-coder",
+                    "enum": [
+                        "llama-2",
+                        "deepseek-coder"
+                    ],
           "markdownDescription": "Overwrite the  model used for code autocompletion inference. This is only supported with the `fireworks` provider"
         },
         "cody.autocomplete.completeSuggestWidgetSelection": {
