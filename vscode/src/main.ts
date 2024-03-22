@@ -362,25 +362,25 @@ const register = async (
         vscode.commands.registerCommand('cody.auth.account', () => authProvider.accountMenu()),
         vscode.commands.registerCommand('cody.auth.support', () => showFeedbackSupportQuickPick()),
         vscode.commands.registerCommand('cody.auth.status', () => authProvider.getAuthStatus()), // Used by the agent
-        vscode.commands.registerCommand(
-            'cody.agent.auth.authenticate',
-            async ({ serverEndpoint, accessToken, customHeaders }) => {
-                if (typeof serverEndpoint !== 'string') {
-                    throw new TypeError('serverEndpoint is required')
-                }
-                if (typeof accessToken !== 'string') {
-                    throw new TypeError('accessToken is required')
-                }
-                return (await authProvider.auth(serverEndpoint, accessToken, customHeaders)).authStatus
-            }
-        ),
+        // vscode.commands.registerCommand(
+        //     'cody.agent.auth.authenticate',
+        //     async ({ serverEndpoint, accessToken, customHeaders }) => {
+        //         if (typeof serverEndpoint !== 'string') {
+        //             throw new TypeError('serverEndpoint is required')
+        //         }
+        //         if (typeof accessToken !== 'string') {
+        //             throw new TypeError('accessToken is required')
+        //         }
+        //         return (await authProvider.auth(serverEndpoint, accessToken, customHeaders)).authStatus
+        //     }
+        // ),
         // Chat
         vscode.commands.registerCommand('cody.focus', () =>
             vscode.commands.executeCommand('cody.chat.focus')
         ),
         vscode.commands.registerCommand('cody.settings.extension', () =>
             vscode.commands.executeCommand('workbench.action.openSettings', {
-                query: '@ext:sourcegraph.cody-ai',
+                query: '@ext:jhai.jody',
             })
         ),
         vscode.commands.registerCommand('cody.chat.history.panel', async () => {
@@ -388,7 +388,7 @@ const register = async (
         }),
         vscode.commands.registerCommand('cody.settings.extension.chat', () =>
             vscode.commands.executeCommand('workbench.action.openSettings', {
-                query: '@ext:sourcegraph.cody-ai chat',
+                query: '@ext:jhai.jody chat',
             })
         ),
 

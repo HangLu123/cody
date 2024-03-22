@@ -268,7 +268,7 @@ class FireworksProvider extends Provider {
 
             const infillPrefix = intro + prefix
 
-            return `<£üfim¨xbegin£ü>${infillPrefix}<£üfim¨xhole£ü>${suffix}<£üfim¨xend£ü>`
+            return `<ï½œfimâ–beginï½œ>${infillPrefix}<ï½œfimâ–holeï½œ>${suffix}<ï½œfimâ–endï½œ>`
         }
 
         console.error('Could not generate infilling prompt for', this.model)
@@ -313,15 +313,15 @@ class FireworksProvider extends Provider {
                 // Convert the SG instance messages array back to the original prompt
                 const prompt = requestParams.messages[0]!.text!
 
-        // c.f. https://readme.fireworks.ai/reference/createcompletion
-        const fireworksRequest = {
-            model: requestParams.model?.replace(/^fireworks\//, ''),
-            prompt,
-            max_tokens: requestParams.maxTokensToSample,
-            temperature: requestParams.temperature,
-            top_k: 1,
-            stream: true,
-        }
+                // c.f. https://readme.fireworks.ai/reference/createcompletion
+                const fireworksRequest = {
+                    model: requestParams.model?.replace(/^fireworks\//, ''),
+                    prompt,
+                    max_tokens: requestParams.maxTokensToSample,
+                    temperature: requestParams.temperature,
+                    top_k: 1,
+                    stream: true,
+                }
 
                 const headers = new Headers()
                 // Force HTTP connection reuse to reduce latency.
@@ -330,6 +330,7 @@ class FireworksProvider extends Provider {
                 headers.set('Content-Type', 'application/json; charset=utf-8')
                 headers.set('Authorization', `Bearer ${self.fastPathAccessToken}`)
                 headers.set('X-Sourcegraph-Feature', 'code_completions')
+                process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
                 addTraceparent(headers)
 
                 logDebug('FireworksProvider', 'fetch', { verbose: { url, fireworksRequest } })
