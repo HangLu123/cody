@@ -1,3 +1,4 @@
+import * as vscode from 'vscode'
 import type { AuthStatus } from '../auth/types'
 import { ANSWER_TOKENS } from '../prompt/constants'
 import type { Message } from '../sourcegraph-api'
@@ -9,11 +10,13 @@ import type {
 
 type ChatParameters = Omit<CompletionParameters, 'messages'>
 
-const DEFAULT_CHAT_COMPLETION_PARAMETERS: ChatParameters = {
-    temperature: 0.2,
-    maxTokensToSample: ANSWER_TOKENS,
-    topK: -1,
-    topP: -1,
+const DEFAULT_CHAT_COMPLETION_PARAMETERS: any = {
+    model: vscode.workspace.getConfiguration().get('cody.chat.model'),
+    max_tokens: vscode.workspace.getConfiguration().get('cody.chat.max_tokens') || ANSWER_TOKENS,
+    temperature: vscode.workspace.getConfiguration().get('cody.chat.temperature'),
+    top_p: vscode.workspace.getConfiguration().get('cody.chat.top_p'),
+    top_k: vscode.workspace.getConfiguration().get('cody.chat.top_k'),
+    stream: true,
 }
 
 export class ChatClient {
@@ -26,36 +29,28 @@ export class ChatClient {
     ) {}
 
     public chat(
-        messages: Message[],
+        messages: any,
         params: Partial<ChatParameters>,
         abortSignal?: AbortSignal
     ): AsyncGenerator<CompletionGeneratorValue> {
         const authStatus = this.getAuthStatus()
         const useApiV1 = authStatus.codyApiVersion >= 1 && params.model?.includes('claude-3')
-        const isLastMessageFromHuman = messages.length > 0 && messages.at(-1)!.speaker === 'human'
-
-        const augmentedMessages =
-            params?.model?.startsWith('fireworks/') || useApiV1
-                ? sanitizeMessages(messages)
-                : isLastMessageFromHuman
-                  ? messages.concat([{ speaker: 'assistant' }])
-                  : messages
-
-        // We only want to send up the speaker and prompt text, regardless of whatever other fields
-        // might be on the messages objects (`file`, `displayText`, `contextFiles`, etc.).
-        const messagesToSend = augmentedMessages.map(({ speaker, text }) => ({
-            text,
-            speaker,
-        }))
-
-        const completionParams = {
-            ...DEFAULT_CHAT_COMPLETION_PARAMETERS,
-            ...params,
-            messages: messagesToSend,
+        const lastMessage = messages[messages.length - 1]
+        if (lastMessage && lastMessage.speaker === 'assistant') {
+            messages = messages.slice(0, -1)
         }
+        messages = messages.map((ele: any, index: number) => {
+            return {
+                role: ele.speaker === 'human' ? 'user' : ele.speaker,
+                content: ele.text,
+            }
+        })
 
         return this.completions.stream(
-            completionParams,
+            {
+                ...DEFAULT_CHAT_COMPLETION_PARAMETERS,
+                messages,
+            },
             useApiV1 ? authStatus.codyApiVersion : 0,
             abortSignal
         )

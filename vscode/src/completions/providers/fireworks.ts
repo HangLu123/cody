@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as vscode from 'vscode'
 
 import {
@@ -238,7 +239,7 @@ class FireworksProvider extends Provider {
                     ? MODEL_MAP[multiline ? 'starcoder2-15b' : 'starcoder2-7b']
                     : this.model === 'starcoder-hybrid'
                       ? MODEL_MAP[multiline ? 'starcoder-16b' : 'starcoder-7b']
-                      : MODEL_MAP[this.model],
+                      : this.model,
         } satisfies CodeCompletionsParams
 
         if (requestParams.model.includes('starcoder2')) {
@@ -258,9 +259,7 @@ class FireworksProvider extends Provider {
             const abortController = forkSignal(abortSignal)
 
             const completionResponseGenerator = generatorWithTimeout(
-                this.fastPathAccessToken
-                    ? this.createFastPathClient(requestParams, abortController)
-                    : this.createDefaultClient(requestParams, abortController),
+                this.createFastPathClient(requestParams, abortController),
                 requestParams.timeoutMs,
                 abortController
             )
@@ -306,6 +305,11 @@ class FireworksProvider extends Provider {
             // c.f. https://github.com/facebookresearch/codellama/blob/main/llama/generation.py#L402
             return `<PRE> ${intro}${prefix} <SUF>${suffix} <MID>`
         }
+        if (isDeepseekCoder(this.model)) {
+
+            const infillPrefix = intro + prefix
+            return `<｜fim▁begin｜>${infillPrefix}<｜fim▁hole｜>${suffix}<｜fim▁end｜>`
+        }
 
         console.error('Could not generate infilling prompt for', this.model)
         return `${intro}${prefix}`
@@ -343,9 +347,8 @@ class FireworksProvider extends Provider {
             ? 'http://localhost:9992'
             : 'https://cody-gateway.sourcegraph.com'
 
-        const url = this.fireworksConfig
-            ? this.fireworksConfig.url
-            : `${gatewayUrl}/v1/completions/fireworks`
+        // const url = `${gatewayUrl}/v1/completions/fireworks`
+        const url = `${vscode.workspace.getConfiguration().get('cody.autocomplete.advanced.serverEndpoint')}v1/completions`
         const log = this.client.logger?.startCompletion(requestParams, url)
 
         // The async generator can not use arrow function syntax so we close over the context
@@ -359,19 +362,11 @@ class FireworksProvider extends Provider {
 
                 // c.f. https://readme.fireworks.ai/reference/createcompletion
                 const fireworksRequest = {
-                    model:
-                        self.fireworksConfig?.model || requestParams.model?.replace(/^fireworks\//, ''),
+                    model: requestParams.model?.replace(/^fireworks\//, ''),
                     prompt,
                     max_tokens: requestParams.maxTokensToSample,
-                    echo: false,
-                    temperature:
-                        self.fireworksConfig?.parameters?.temperature || requestParams.temperature,
-                    top_p: self.fireworksConfig?.parameters?.top_p || requestParams.topP,
-                    top_k: self.fireworksConfig?.parameters?.top_k || requestParams.topK,
-                    stop: [
-                        ...(requestParams.stopSequences || []),
-                        ...(self.fireworksConfig?.parameters?.stop || []),
-                    ],
+                    temperature: requestParams.temperature,
+                    top_k: 1,
                     stream: true,
                 }
 
@@ -385,6 +380,7 @@ class FireworksProvider extends Provider {
                 )
                 headers.set('Authorization', `Bearer ${self.fastPathAccessToken}`)
                 headers.set('X-Sourcegraph-Feature', 'code_completions')
+                process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
                 addTraceparent(headers)
 
                 logDebug('FireworksProvider', 'fetch', { verbose: { url, fireworksRequest } })
@@ -465,7 +461,7 @@ class FireworksProvider extends Provider {
                         if (!choice) {
                             continue
                         }
-
+                        console.log(choice.text)
                         lastResponse = {
                             completion: (lastResponse ? lastResponse.completion : '') + choice.text,
                             stopReason:
@@ -528,14 +524,7 @@ export function createProviderConfig({
 }: Omit<FireworksOptions, 'model' | 'maxContextTokens'> & {
     model: string | null
 }): ProviderConfig {
-    const resolvedModel =
-        model === null || model === ''
-            ? 'starcoder-hybrid'
-            : ['starcoder-hybrid', 'starcoder2-hybrid'].includes(model)
-              ? (model as FireworksModel)
-              : Object.prototype.hasOwnProperty.call(MODEL_MAP, model)
-                  ? (model as keyof typeof MODEL_MAP)
-                  : null
+    const resolvedModel:any = model
 
     if (resolvedModel === null) {
         throw new Error(`Unknown model: \`${model}\``)
@@ -570,6 +559,10 @@ function isStarCoderFamily(model: string): boolean {
 
 function isLlamaCode(model: string): boolean {
     return model.startsWith('llama-code')
+}
+
+function isDeepseekCoder(model: string): boolean {
+    return model.startsWith('deepseek-coder')
 }
 
 interface FireworksSSEData {

@@ -143,9 +143,7 @@ export class FeatureFlagProvider {
     public async refreshFeatureFlags(): Promise<void> {
         return wrapInActiveSpan('FeatureFlagProvider.refreshFeatureFlags', async () => {
             const endpoint = this.apiClient.endpoint
-            const data = process.env.DISABLE_FEATURE_FLAGS
-                ? {}
-                : await this.apiClient.getEvaluatedFeatureFlags()
+            const data = {}
 
             this.exposedFeatureFlags[endpoint] = isError(data) ? {} : data
 

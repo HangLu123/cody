@@ -191,7 +191,7 @@ export class CommandCodeLenses implements vscode.CodeLensProvider {
 
 const commandLenses = {
     cody: {
-        title: '$(cody-logo) Cody',
+        title: '$(cody-logo) Jody',
         command: 'cody.editor.codelens.click',
         tooltip: 'Open command menu',
     },

@@ -11,7 +11,8 @@ import { toPartialUtf8String } from '../utils'
 import { ollamaChatClient } from '../../ollama/chat-client'
 import { getTraceparentHeaders, recordErrorToSpan, tracer } from '../../tracing'
 import { SourcegraphCompletionsClient } from './client'
-import { parseEvents } from './parse'
+// import { parseEvents } from './parse'
+import { parseSSEData } from './parse'
 import type { CompletionCallbacks, CompletionParameters } from './types'
 
 const isTemperatureZero = process.env.CODY_TEMPERATURE_ZERO === 'true'
@@ -52,7 +53,9 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
 
             const log = this.logger?.startCompletion(params, url.toString())
 
-            const requestFn = url.protocol === 'https:' ? https.request : http.request
+            const requestFn = this.completionsEndpoint.startsWith('https://')
+                ? https.request
+                : http.request
 
             // Keep track if we have send any message to the completion callbacks
             let didSendMessage = false
@@ -68,12 +71,12 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                     didSendError = true
                 }
             }
-
+            process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
             // Text which has not been decoded as a server-sent event (SSE)
             let bufferText = ''
 
             const request = requestFn(
-                url,
+                this.completionsEndpoint,
                 {
                     method: 'POST',
                     headers: {
@@ -160,6 +163,9 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
 
                     // Bytes which have not been decoded as UTF-8 text
                     let bufferBin = Buffer.of()
+                    // Text which has not been decoded as a server-sent event (SSE)
+
+                    let completionText = ''
 
                     res.on('data', chunk => {
                         if (!(chunk instanceof Buffer)) {
@@ -171,7 +177,7 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                         bufferText += str
                         bufferBin = buf
 
-                        const parseResult = parseEvents(bufferText)
+                        const parseResult = parseSSEData(bufferText)
                         if (isError(parseResult)) {
                             logError(
                                 'SourcegraphNodeCompletionsClient',
@@ -182,10 +188,12 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                         }
 
                         didSendMessage = true
-                        didReceiveAnyEvent = didReceiveAnyEvent || parseResult.events.length > 0
-                        log?.onEvents(parseResult.events)
-                        this.sendEvents(parseResult.events, cb, span)
-                        bufferText = parseResult.remainingBuffer
+                        if (parseResult.type === 'completion') {
+                            completionText += parseResult.completion
+                            parseResult.completion = completionText
+                        }
+                        bufferText = ''
+                        this.sendEvents([parseResult], cb, span)
                     })
 
                     res.on('error', e => handleError(e))

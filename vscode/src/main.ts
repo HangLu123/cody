@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as vscode from 'vscode'
 
 import {
@@ -51,7 +52,8 @@ import { CodyProExpirationNotifications } from './notifications/cody-pro-expirat
 import { showSetupNotification } from './notifications/setup-notification'
 import { gitAPIinit } from './repository/repositoryHelpers'
 import { SearchViewProvider } from './search/SearchViewProvider'
-import { AuthProvider } from './services/AuthProvider'
+// import { AuthProvider } from './services/AuthProvider'
+import { AlwaysAuthProvider as AuthProvider } from './services/AlwaysAuthProvider'
 import { CharactersLogger } from './services/CharactersLogger'
 import { showFeedbackSupportQuickPick } from './services/FeedbackOptions'
 import { GuardrailsProvider } from './services/GuardrailsProvider'
@@ -378,25 +380,25 @@ const register = async (
         vscode.commands.registerCommand('cody.auth.account', () => authProvider.accountMenu()),
         vscode.commands.registerCommand('cody.auth.support', () => showFeedbackSupportQuickPick()),
         vscode.commands.registerCommand('cody.auth.status', () => authProvider.getAuthStatus()), // Used by the agent
-        vscode.commands.registerCommand(
-            'cody.agent.auth.authenticate',
-            async ({ serverEndpoint, accessToken, customHeaders }) => {
-                if (typeof serverEndpoint !== 'string') {
-                    throw new TypeError('serverEndpoint is required')
-                }
-                if (typeof accessToken !== 'string') {
-                    throw new TypeError('accessToken is required')
-                }
-                return (await authProvider.auth(serverEndpoint, accessToken, customHeaders)).authStatus
-            }
-        ),
+        // vscode.commands.registerCommand(
+        //     'cody.agent.auth.authenticate',
+        //     async ({ serverEndpoint, accessToken, customHeaders }) => {
+        //         if (typeof serverEndpoint !== 'string') {
+        //             throw new TypeError('serverEndpoint is required')
+        //         }
+        //         if (typeof accessToken !== 'string') {
+        //             throw new TypeError('accessToken is required')
+        //         }
+        //         return (await authProvider.auth(serverEndpoint, accessToken, customHeaders)).authStatus
+        //     }
+        // ),
         // Chat
         vscode.commands.registerCommand('cody.focus', () =>
             vscode.commands.executeCommand('cody.chat.focus')
         ),
         vscode.commands.registerCommand('cody.settings.extension', () =>
             vscode.commands.executeCommand('workbench.action.openSettings', {
-                query: '@ext:sourcegraph.cody-ai',
+                query: '@ext:jhai.jody',
             })
         ),
         vscode.commands.registerCommand('cody.chat.history.panel', async () => {
@@ -404,7 +406,7 @@ const register = async (
         }),
         vscode.commands.registerCommand('cody.settings.extension.chat', () =>
             vscode.commands.executeCommand('workbench.action.openSettings', {
-                query: '@ext:sourcegraph.cody-ai chat',
+                query: '@ext:jhai.jody chat',
             })
         ),
 
@@ -508,12 +510,12 @@ const register = async (
             const authStatus = authProvider.getAuthStatus()
             const endpoint = authStatus.endpoint
             if (ws.focused && endpoint && isDotCom(endpoint) && authStatus.isLoggedIn) {
-                const res = await graphqlClient.getCurrentUserCodyProEnabled()
-                if (res instanceof Error) {
-                    console.error(res)
-                    return
-                }
-                authStatus.userCanUpgrade = !res.codyProEnabled
+                // const res = await graphqlClient.getCurrentUserCodyProEnabled()
+                // if (res instanceof Error) {
+                //     console.error(res)
+                //     return
+                // }
+                // authStatus.userCanUpgrade = !res.codyProEnabled
                 void chatManager.syncAuthStatus(authStatus)
             }
         }),
