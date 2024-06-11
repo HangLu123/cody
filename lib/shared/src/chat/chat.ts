@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as vscode from 'vscode'
 import type { AuthStatus } from '../auth/types'
 import { ANSWER_TOKENS } from '../prompt/constants'
@@ -12,10 +13,10 @@ type ChatParameters = Omit<CompletionParameters, 'messages'>
 
 const DEFAULT_CHAT_COMPLETION_PARAMETERS: any = {
     model: vscode.workspace.getConfiguration().get('cody.chat.model'),
-    max_tokens: vscode.workspace.getConfiguration().get('cody.chat.max_tokens') || ANSWER_TOKENS,
-    temperature: vscode.workspace.getConfiguration().get('cody.chat.temperature'),
-    top_p: vscode.workspace.getConfiguration().get('cody.chat.top_p'),
-    top_k: vscode.workspace.getConfiguration().get('cody.chat.top_k'),
+    max_tokens:
+        parseInt(vscode.workspace.getConfiguration().get('cody.chat.max_tokens')) || ANSWER_TOKENS,
+    temperature: parseInt(vscode.workspace.getConfiguration().get('cody.chat.temperature')),
+    top_p: parseInt(vscode.workspace.getConfiguration().get('cody.chat.top_p')),
     stream: true,
 }
 

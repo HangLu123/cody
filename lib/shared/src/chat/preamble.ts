@@ -1,5 +1,4 @@
 import type { Message } from '../sourcegraph-api'
-
 export function getSimplePreamble(
     model: string | undefined,
     apiVersion: number,
@@ -9,7 +8,10 @@ export function getSimplePreamble(
 
     // API Version 1 onward support system prompts, however only enable it for
     // Claude 3 models for now
-    // if (apiVersion >= 1 && model?.includes('claude-3')) {
+    // if (
+    //     vscode.workspace.getConfiguration().get('cody.chat.model') &&
+    //     vscode.workspace.getConfiguration().get('cody.chat.model').includes('qwen')
+    // ) {
     //     return [
     //         {
     //             speaker: 'system',

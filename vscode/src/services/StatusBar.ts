@@ -154,7 +154,7 @@ export function createStatusBar(): CodyStatusBar {
                         tooltip: 'Autocomplete Settings',
                         onClick: () =>
                             vscode.commands.executeCommand('workbench.action.openSettings', {
-                                query: '@ext:jhai.jody autocomplete',
+                                query: '@ext:jhinno.jody autocomplete',
                             }),
                     } as vscode.QuickInputButton,
                 ]

@@ -133,7 +133,7 @@ execFileSync(
     [
         'package',
         ...(releaseType === ReleaseType.Insiders
-            ? [insidersVersion, '--pre-release', '--no-update-package-json', '--no-git-tag-version']
+            ? [packageJSONVersion, '--no-update-package-json', '--no-git-tag-version']
             : []),
         '--no-dependencies',
         '--out',
@@ -146,7 +146,7 @@ execFileSync(
 )
 
 // Publish the extension.
-console.error(`Publishing ${releaseType} release at version ${version}...`)
+console.error(`Publishing ${releaseType} release at version ${packageJSONVersion}...`)
 if (dryRun) {
     console.error('Dry run complete. Skipping publish step.')
 } else {

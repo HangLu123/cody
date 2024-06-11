@@ -54,7 +54,7 @@ export function registerSidebarCommands(): vscode.Disposable[] {
             logSidebarClick('keyboardShortcuts')
             void vscode.commands.executeCommand(
                 'workbench.action.openGlobalKeybindings',
-                '@ext:jhai.jody'
+                '@ext:jhinno.jody'
             )
         }),
         vscode.commands.registerCommand('cody.sidebar.releaseNotes', () => {

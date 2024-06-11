@@ -1,3 +1,5 @@
+// @ts-nocheck
+import * as vscode from 'vscode'
 import {
     type BrowserOrNodeResponse,
     type CodeCompletionsClient,
@@ -37,7 +39,10 @@ export function createClient(
         params: CodeCompletionsParams,
         abortController: AbortController
     ): CompletionResponseGenerator {
-        const url = new URL('/.api/completions/code', config.serverEndpoint).href
+        // const url = new URL('/.api/completions/code', config.serverEndpoint).href
+        const url = `${vscode.workspace
+            .getConfiguration()
+            .get('cody.autocomplete.advanced.serverEndpoint')}v1/completions`
         const log = logger?.startCompletion(params, url)
         const { signal } = abortController
 
@@ -54,7 +59,7 @@ export function createClient(
                 headers.set('Connection', 'keep-alive')
                 headers.set('Content-Type', 'application/json; charset=utf-8')
                 if (config.accessToken) {
-                    headers.set('Authorization', `token ${config.accessToken}`)
+                    headers.set('Authorization', `Bearer ${config.accessToken}`)
                 }
                 if (tracingFlagEnabled) {
                     headers.set('X-Sourcegraph-Should-Trace', '1')
@@ -80,7 +85,9 @@ export function createClient(
                 const response = await fetch(url, {
                     method: 'POST',
                     body: JSON.stringify({
-                        ...params,
+                        model: vscode.workspace.getConfiguration().get('cody.chat.model'),
+                        temperature: params.temperature,
+                        prompt: params.messages[0]!.text!,
                         stream: enableStreaming,
                     }),
                     headers,
@@ -144,13 +151,13 @@ export function createClient(
                                 break
                             }
 
-                            if (event === 'completion') {
+                            if (!data.includes('[DONE]')) {
                                 completionResponse = JSON.parse(data) as CompletionResponse
                                 const stopReason =
                                     completionResponse.stopReason || CompletionStopReason.StreamingChunk
                                 span.addEvent('yield', { stopReason })
                                 yield {
-                                    completion: completionResponse.completion,
+                                    completion: completionResponse.choices[0].text,
                                     stopReason,
                                 }
                             }

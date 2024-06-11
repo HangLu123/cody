@@ -69,10 +69,7 @@ export function getConfiguration(
     }
 
     // check if the configured enum values are valid
-    const configKeys = [
-        'autocompleteAdvancedProvider',
-        'autocompleteAdvancedModel',
-    ] as (keyof ConfigurationKeysMap)[]
+    const configKeys = ['autocompleteAdvancedProvider'] as (keyof ConfigurationKeysMap)[]
 
     for (const configVal of configKeys) {
         const key = configVal.replaceAll(/([A-Z])/g, '.$1').toLowerCase()

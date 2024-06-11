@@ -1,18 +1,17 @@
+// @ts-nocheck
 import http from 'node:http'
 import https from 'node:https'
-
+import * as vscode from 'vscode'
 import { onAbort } from '../../common/abortController'
 import { logError } from '../../logger'
 import { isError } from '../../utils'
 import { RateLimitError } from '../errors'
-import { customUserAgent } from '../graphql/client'
 import { toPartialUtf8String } from '../utils'
 
 import { ollamaChatClient } from '../../ollama/chat-client'
-import { getTraceparentHeaders, recordErrorToSpan, tracer } from '../../tracing'
+import { recordErrorToSpan, tracer } from '../../tracing'
 import { SourcegraphCompletionsClient } from './client'
-// import { parseEvents } from './parse'
-import { parseSSEData } from './parse'
+import { parseEvents } from './parse'
 import type { CompletionCallbacks, CompletionParameters } from './types'
 
 const isTemperatureZero = process.env.CODY_TEMPERATURE_ZERO === 'true'
@@ -74,22 +73,16 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
             process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
             // Text which has not been decoded as a server-sent event (SSE)
             let bufferText = ''
-
+            const accessToken = vscode.workspace
+                .getConfiguration()
+                .get('cody.autocomplete.advanced.accessToken')
             const request = requestFn(
                 this.completionsEndpoint,
                 {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        // Disable gzip compression since the sg instance will start to batch
-                        // responses afterwards.
-                        'Accept-Encoding': 'gzip;q=0',
-                        ...(this.config.accessToken
-                            ? { Authorization: `token ${this.config.accessToken}` }
-                            : null),
-                        ...(customUserAgent ? { 'User-Agent': customUserAgent } : null),
-                        ...this.config.customHeaders,
-                        ...getTraceparentHeaders(),
+                        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : null),
                     },
                     // So we can send requests to the Sourcegraph local development instance, which has an incompatible cert.
                     rejectUnauthorized:
@@ -165,6 +158,7 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                     let bufferBin = Buffer.of()
                     // Text which has not been decoded as a server-sent event (SSE)
 
+                    let completionEvents: any = []
                     let completionText = ''
 
                     res.on('data', chunk => {
@@ -177,7 +171,7 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                         bufferText += str
                         bufferBin = buf
 
-                        const parseResult = parseSSEData(bufferText)
+                        const parseResult = parseEvents(bufferText)
                         if (isError(parseResult)) {
                             logError(
                                 'SourcegraphNodeCompletionsClient',
@@ -186,14 +180,54 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                             )
                             return
                         }
+                        completionEvents = [...completionEvents, ...parseResult.events]
 
                         didSendMessage = true
-                        if (parseResult.type === 'completion') {
-                            completionText += parseResult.completion
-                            parseResult.completion = completionText
+                        for (let i = 0; i < parseResult.events.length; i++) {
+                            if (parseResult.events[i].type === 'completion') {
+                                completionText += parseResult.events[i].completion
+                            }
                         }
-                        bufferText = ''
-                        this.sendEvents([parseResult], cb, span)
+                        console.log(completionText, 'completionText')
+                        if (parseResult.events.length) {
+                            this.sendEvents(
+                                [
+                                    {
+                                        type: 'completion',
+                                        completion: completionText,
+                                        stopReason: '',
+                                    },
+                                ],
+                                cb,
+                                span
+                            )
+                            if (parseResult.events[parseResult.events.length - 1].type === 'done') {
+                                this.sendEvents(
+                                    [
+                                        {
+                                            type: 'done',
+                                        },
+                                    ],
+                                    cb,
+                                    span
+                                )
+                            }
+                        } else {
+                            this.sendEvents(
+                                completionText
+                                    ? [
+                                          {
+                                              type: 'completion',
+                                              completion: completionText,
+                                              stopReason: '',
+                                          },
+                                      ]
+                                    : [],
+                                cb,
+                                span
+                            )
+                        }
+                        bufferText = parseResult.remainingBuffer
                     })
 
                     res.on('error', e => handleError(e))

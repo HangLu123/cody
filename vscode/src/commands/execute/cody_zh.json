@@ -21,7 +21,7 @@
     },
     "test": {
       "description": "生成单元测试",
-      "prompt": "审查共享上下文，识别正在使用的测试框架和库。然后，使用检测到的测试框架和库为所选函数生成一套多个单元测试。确保导入正在测试的函数。使用与共享上下文中显示的相同模式、测试约定和测试库。仅基于共享代码导入模块、函数、依赖项和模拟。如果共享上下文中不存在所选代码的测试套件，请专注于为未覆盖的情况生成新的测试。如果没有检测到任何测试，请为{languageName}导入常用单元测试库。专注于使用简单而完整的断言验证关键功能。在编写测试之前，确定要使用和导入的测试库和框架。最后，包含全新单元测试的完整代码，不包含任何注释、片段或TODOs。新的测试应验证预期功能，并覆盖所有必需的导入项，包括正在测试的函数。不要重复共享上下文中的测试。仅包含完整可运行的测试。",
+      "prompt": "Review the shared context to identify the testing framework and libraries in use. Then, generate a suite of multiple unit tests for the selected function using the detected test framework and libraries. Be sure to import the function being tested. Use the same patterns, testing framework, conventions, and libraries as shown in the shared context. Only import modules, functions, dependencies, and mocks based on shared code. If a test suite for the selected code is in the shared context, focus on generating new tests for uncovered cases. If none are detected, import common unit test libraries for {languageName}. Focus on validating key functionality with simple and complete assertions. Before writing the tests, identify which testing libraries and frameworks to use and import. At the end, enclose the fully completed code for the new unit tests without any comments, fragments, or TODOs, do not give any documentations surrounding. The new tests should validate the expected functionality and cover edge cases for with all required imports, including the function being tested. Do not repeat tests from the shared context. Enclose only the complete runnable tests.Just give me the code, don't give me any description, and no markdown format!!!",
       "context": {
         "currentDir": true,
         "currentFile": true,
@@ -30,8 +30,8 @@
       "type": "default"
     },
     "smell": {
-      "description": "发现代码气味",
-      "prompt": "请审查并分析所选代码，识别与代码气味、可读性、可维护性、性能、安全性等相关的潜在改进领域。不要列出已在给定代码中解决的问题。重点提供最多5条建设性建议，可以使代码更加健壮、高效，或者与最佳实践相一致。对于每个建议，请提供一个简要的解释，说明潜在的好处。在列出任何建议之后，总结一下是否发现了改进代码质量的显著机会，或者代码是否基本符合良好的设计原则。如果未发现问题，请回复“没有错误”。",
+      "description": "发现代码问题",
+      "prompt": "请对选定的代码进行深入的审查与分析，特别关注代码质量、可读性、可维护性、性能优化以及安全性等方面，寻找潜在的改进空间。已经在代码中解决的问题无需重复提及。请提出最多五条具有针对性的建议，旨在提升代码的健壮性、效率和最佳实践符合度。对于每条建议，请简洁明了地阐述其潜在的益处。在列出建议后，请总结是否发现了明显的改进机会以全面提升代码质量，或者代码是否大体上遵循了良好的设计原则。如果审查后未发现明显的不足或问题，请回复“代码质量良好，无需明显改进。",
       "type": "default"
     }
   }

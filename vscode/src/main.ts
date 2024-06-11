@@ -398,7 +398,7 @@ const register = async (
         ),
         vscode.commands.registerCommand('cody.settings.extension', () =>
             vscode.commands.executeCommand('workbench.action.openSettings', {
-                query: '@ext:jhai.jody',
+                query: '@ext:jhinno.jody',
             })
         ),
         vscode.commands.registerCommand('cody.chat.history.panel', async () => {
@@ -406,7 +406,7 @@ const register = async (
         }),
         vscode.commands.registerCommand('cody.settings.extension.chat', () =>
             vscode.commands.executeCommand('workbench.action.openSettings', {
-                query: '@ext:jhai.jody chat',
+                query: '@ext:jhinno.jody chat',
             })
         ),
 

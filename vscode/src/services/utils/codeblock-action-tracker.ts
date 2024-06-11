@@ -42,7 +42,14 @@ function setLastStoredCode(
     // All non-copy events are considered as insertions since we don't need to listen for paste events
     insertInProgress = !eventName.includes('copy')
     const { lineCount, charCount } = countCode(code)
-    const codeCount = { code, lineCount, charCount, eventName, source, requestID }
+    const codeCount = {
+        code,
+        lineCount,
+        charCount,
+        eventName,
+        source,
+        requestID,
+    }
 
     lastStoredCode = codeCount
 
@@ -84,8 +91,9 @@ export async function handleCodeFromInsertAtCursor(text: string): Promise<void> 
     }
 
     const edit = new vscode.WorkspaceEdit()
+    const range = new vscode.Range(selectionRange.start, selectionRange.end)
     // trimEnd() to remove new line added by Cody
-    edit.insert(activeEditor.document.uri, selectionRange.start, `${text}\n`)
+    edit.replace(activeEditor.document.uri, range, `${text}\n`)
     await vscode.workspace.applyEdit(edit)
 
     // Log insert event

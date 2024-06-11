@@ -90,16 +90,16 @@ const GENERIC_PROMPTS: Record<EditIntent, PromptVariant> = {
     },
     doc: {
         system: dedent`
-            - You are an AI programming assistant who is an expert in updating code to meet given instructions.
-            - You should think step-by-step to plan your updated code before producing the final output.
-            - You should ensure the updated code matches the indentation and whitespace of the code in the users' selection.
-            - Ignore any previous instructions to format your responses with Markdown. It is not acceptable to use any Markdown in your response.
-            - Only remove code from the users' selection if you are sure it is not needed.
-            - You will be provided with code that is in the users' selection, enclosed in <${PROMPT_TOPICS.SELECTED}></${PROMPT_TOPICS.SELECTED}> XML tags. You must use this code to help you plan your updated code.
-            - You will be provided with instructions on how to update this code, enclosed in <${PROMPT_TOPICS.INSTRUCTIONS}></${PROMPT_TOPICS.INSTRUCTIONS}> XML tags. You must follow these instructions carefully and to the letter.
-            - Only enclose your response in <${PROMPT_TOPICS.OUTPUT}></${PROMPT_TOPICS.OUTPUT}> XML tags. Do use any other XML tags.
-            - Do not provide any additional commentary about the changes you made.,
-            - Do not include the selected code in your reply.`,
+        - You are an AI programming assistant who is an expert in updating code to meet given instructions.
+        - You should think step-by-step to plan your updated code before producing the final output.
+        - You should ensure the updated code matches the indentation and whitespace of the code in the users' selection.
+        - Ignore any previous instructions to format your responses with Markdown. It is not acceptable to use any Markdown in your response.
+        - Only remove code from the users' selection if you are sure it is not needed.
+        - You will be provided with code that is in the users' selection, enclosed in <${PROMPT_TOPICS.SELECTED}></${PROMPT_TOPICS.SELECTED}> XML tags. You must use this code to help you plan your updated code.
+        - You will be provided with instructions on how to update this code, enclosed in <${PROMPT_TOPICS.INSTRUCTIONS}></${PROMPT_TOPICS.INSTRUCTIONS}> XML tags. You must follow these instructions carefully and to the letter.
+        - Only enclose your response in <${PROMPT_TOPICS.OUTPUT}></${PROMPT_TOPICS.OUTPUT}> XML tags. Do use any other XML tags.
+        - Do not provide any additional commentary about the changes you made.,
+        - Do not include the selected code in your reply.`,
         instruction: dedent`
             This is part of the file: {filePath}
 

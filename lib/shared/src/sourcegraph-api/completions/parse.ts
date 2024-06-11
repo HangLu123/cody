@@ -1,3 +1,5 @@
+// @ts-nocheck
+import * as vscode from 'vscode'
 import { isError } from '../../utils'
 
 import type { Event } from './types'
@@ -81,7 +83,7 @@ export function parseEvents(eventsBuffer: string): EventsParseResult | Error {
 
     const events: Event[] = []
     while (eventEndIndex >= 0) {
-        const event = parseEvent(eventsBuffer.slice(eventStartIndex, eventEndIndex))
+        const event = parseSSEData(eventsBuffer.slice(eventStartIndex, eventEndIndex))
         if (isError(event)) {
             return event
         }

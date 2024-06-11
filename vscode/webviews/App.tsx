@@ -24,7 +24,6 @@ import {
 } from './Components/EnhancedContextSettings'
 import { LoadingPage } from './LoadingPage'
 import type { View } from './NavBar'
-import { Notices } from './Notices'
 import { LoginSimplified } from './OnboardingExperiment'
 import type { VSCodeWrapper } from './utils/VSCodeApi'
 import { updateDisplayPathEnvInfoForWebview } from './utils/displayPathEnvInfo'
@@ -208,7 +207,7 @@ export const App: React.FunctionComponent<{ vscodeAPI: VSCodeWrapper }> = ({ vsc
                 />
             ) : (
                 <>
-                    {userHistory && <Notices probablyNewInstall={isNewInstall} vscodeAPI={vscodeAPI} />}
+                    {/* {userHistory && <Notices probablyNewInstall={isNewInstall} vscodeAPI={vscodeAPI} />} */}
                     {errorMessages && (
                         <ErrorBanner errors={errorMessages} setErrors={setErrorMessages} />
                     )}

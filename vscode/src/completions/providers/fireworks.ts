@@ -31,6 +31,7 @@ import { getLanguageConfig } from '../../tree-sitter/language'
 import { getSuffixAfterFirstNewline } from '../text-processing'
 import type { ContextSnippet } from '../types'
 import { forkSignal, generatorWithTimeout, zipGenerators } from '../utils'
+import { getModelHelpers } from './fastChat-models'
 
 import { SpanStatusCode } from '@opentelemetry/api'
 import { logDebug } from '../../log'
@@ -200,12 +201,12 @@ class FireworksProvider extends Provider {
             // code can't handle this correctly.
             const suffixAfterFirstNewline = getSuffixAfterFirstNewline(suffix)
 
-            const nextPrompt = this.createInfillingPrompt(
-                vscode.workspace.asRelativePath(this.options.document.fileName),
-                introString,
+            const modelHelpers = getModelHelpers(this.model)
+            const nextPrompt = modelHelpers.getPrompt({
+                context: introString,
                 prefix,
-                suffixAfterFirstNewline
-            )
+                suffix: suffixAfterFirstNewline,
+            })
 
             if (nextPrompt.length >= this.promptChars) {
                 return prompt
@@ -255,7 +256,9 @@ class FireworksProvider extends Provider {
 
         tracer?.params(requestParams)
 
-        const completionsGenerators = Array.from({ length: this.options.n }).map(() => {
+        const completionsGenerators = Array.from({
+            length: this.options.n,
+        }).map(() => {
             const abortController = forkSignal(abortSignal)
 
             const completionResponseGenerator = generatorWithTimeout(
@@ -305,11 +308,6 @@ class FireworksProvider extends Provider {
             // c.f. https://github.com/facebookresearch/codellama/blob/main/llama/generation.py#L402
             return `<PRE> ${intro}${prefix} <SUF>${suffix} <MID>`
         }
-        if (isDeepseekCoder(this.model)) {
-
-            const infillPrefix = intro + prefix
-            return `<｜fim▁begin｜>${infillPrefix}<｜fim▁hole｜>${suffix}<｜fim▁end｜>`
-        }
 
         console.error('Could not generate infilling prompt for', this.model)
         return `${intro}${prefix}`
@@ -348,7 +346,9 @@ class FireworksProvider extends Provider {
             : 'https://cody-gateway.sourcegraph.com'
 
         // const url = `${gatewayUrl}/v1/completions/fireworks`
-        const url = `${vscode.workspace.getConfiguration().get('cody.autocomplete.advanced.serverEndpoint')}v1/completions`
+        const url = `${vscode.workspace
+            .getConfiguration()
+            .get('cody.autocomplete.advanced.serverEndpoint')}v1/completions`
         const log = this.client.logger?.startCompletion(requestParams, url)
 
         // The async generator can not use arrow function syntax so we close over the context
@@ -360,13 +360,13 @@ class FireworksProvider extends Provider {
                 // Convert the SG instance messages array back to the original prompt
                 const prompt = requestParams.messages[0]!.text!
 
+                const modelHelpers = getModelHelpers(self.model)
                 // c.f. https://readme.fireworks.ai/reference/createcompletion
                 const fireworksRequest = {
-                    model: requestParams.model?.replace(/^fireworks\//, ''),
+                    model: self.model,
                     prompt,
                     max_tokens: requestParams.maxTokensToSample,
-                    temperature: requestParams.temperature,
-                    top_k: 1,
+                    ...modelHelpers.getRequestOptions(true),
                     stream: true,
                 }
 
@@ -383,7 +383,9 @@ class FireworksProvider extends Provider {
                 process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
                 addTraceparent(headers)
 
-                logDebug('FireworksProvider', 'fetch', { verbose: { url, fireworksRequest } })
+                logDebug('FireworksProvider', 'fetch', {
+                    verbose: { url, fireworksRequest },
+                })
                 const response = await fetch(url, {
                     method: 'POST',
                     body: JSON.stringify(fireworksRequest),
@@ -471,7 +473,9 @@ class FireworksProvider extends Provider {
                                     : CompletionStopReason.StreamingChunk),
                         }
 
-                        span.addEvent('yield', { stopReason: lastResponse.stopReason })
+                        span.addEvent('yield', {
+                            stopReason: lastResponse.stopReason,
+                        })
                         yield lastResponse
 
                         chunkIndex += 1
@@ -506,7 +510,9 @@ class FireworksProvider extends Provider {
                     throw new TracedError(message, traceId)
                 } finally {
                     if (lastResponse) {
-                        span.addEvent('return', { stopReason: lastResponse.stopReason })
+                        span.addEvent('return', {
+                            stopReason: lastResponse.stopReason,
+                        })
                         span.setStatus({ code: SpanStatusCode.OK })
                         span.end()
                         log?.onComplete(lastResponse)
@@ -524,7 +530,7 @@ export function createProviderConfig({
 }: Omit<FireworksOptions, 'model' | 'maxContextTokens'> & {
     model: string | null
 }): ProviderConfig {
-    const resolvedModel:any = model
+    const resolvedModel: any = model
 
     if (resolvedModel === null) {
         throw new Error(`Unknown model: \`${model}\``)
@@ -559,10 +565,6 @@ function isStarCoderFamily(model: string): boolean {
 
 function isLlamaCode(model: string): boolean {
     return model.startsWith('llama-code')
-}
-
-function isDeepseekCoder(model: string): boolean {
-    return model.startsWith('deepseek-coder')
 }
 
 interface FireworksSSEData {

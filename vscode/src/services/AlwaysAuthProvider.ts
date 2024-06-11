@@ -11,7 +11,9 @@ export class AlwaysAuthProvider extends AuthProvider {
     // if none, try signing in with App URL
     public async init(): Promise<void> {
         const lastEndpoint = this.config.serverEndpoint
-        const token = 'mock-fake-token' // this.config.accessToken
+        const token =
+            vscode.workspace.getConfiguration().get('cody.autocomplete.advanced.accessToken') ||
+            'mock-fake-token' // this.config.accessToken
         console.log('AuthProvider:init:lastEndpoint', lastEndpoint, token)
         await this.auth(lastEndpoint, token || null)
     }
@@ -49,21 +51,22 @@ export class AlwaysAuthProvider extends AuthProvider {
         const serverEndpoint =
             vscode.workspace.getConfiguration().get('cody.autocomplete.advanced.serverEndpoint') ||
             vscode.workspace.getConfiguration().get('cody.chat.advanced.serverEndpoint')
-        if (serverEndpoint.includes('dockerService')) {
-            const baseUrl = `${serverEndpoint.split(':')[0]}:${
-                serverEndpoint.split(':')[1].split(':')[0]
-            }`
+        const jhServer = vscode.workspace.getConfiguration().get('cody.jhServer')
+        if (serverEndpoint?.includes('dockerService') || jhServer) {
+            const baseUrl = serverEndpoint?.includes('dockerService')
+                ? `${serverEndpoint.split(':')[0]}:${serverEndpoint.split(':')[1].split(':')[0]}`
+                : jhServer
             const res = await this.fetchSourcegraphAPI(
                 `${baseUrl}/appform/register/getDepList?ztree=true`
             )
             if (res) {
                 return newAuthStatus(
                     endpoint,
-                    false,
                     true,
                     true,
                     true,
-                    /* userCanUpgrade: */ false,
+                    true,
+                    /* userCanUpgrade: */ true,
                     '1.0',
                     undefined,
                     '',
@@ -80,7 +83,9 @@ export class AlwaysAuthProvider extends AuthProvider {
                 )
             }
         }
-        void vscode.window.showErrorMessage('请先安装景行AI.')
+        void vscode.window.showErrorMessage(
+            '无法连接到景行AI平台，插件暂不可用，请先到景行AI平台部署服务'
+        )
         return
     }
 
