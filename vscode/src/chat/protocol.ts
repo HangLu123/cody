@@ -20,6 +20,7 @@ import type { Repo } from '../context/repo-fetcher'
  * A message sent from the webview to the extension host.
  */
 export type WebviewMessage =
+    | { command: 'login' }
     | { command: 'ready' }
     | { command: 'initialized' }
     | {

@@ -1,4 +1,5 @@
 // TODO: use implements vscode.XXX on mocked classes to ensure they match the real vscode API.
+// @ts-nocheck
 import fspromises from 'node:fs/promises'
 
 import type * as vscode_types from 'vscode'

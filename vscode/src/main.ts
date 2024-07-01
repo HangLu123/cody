@@ -377,7 +377,7 @@ const register = async (
         // Auth
         vscode.commands.registerCommand('cody.auth.signin', () => authProvider.signinMenu()),
         vscode.commands.registerCommand('cody.auth.signout', () => authProvider.signoutMenu()),
-        vscode.commands.registerCommand('cody.auth.account', () => authProvider.accountMenu()),
+        vscode.commands.registerCommand('cody.auth.account', () => authProvider.signout()),
         vscode.commands.registerCommand('cody.auth.support', () => showFeedbackSupportQuickPick()),
         vscode.commands.registerCommand('cody.auth.status', () => authProvider.getAuthStatus()), // Used by the agent
         // vscode.commands.registerCommand(

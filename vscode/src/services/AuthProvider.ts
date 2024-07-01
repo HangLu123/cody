@@ -422,7 +422,8 @@ export class AuthProvider {
     // Store endpoint in local storage, token in secret storage, and update endpoint history
     protected async storeAuthInfo(
         endpoint: string | null | undefined,
-        token: string | null | undefined
+        token: string | null | undefined,
+        always?:boolean
     ): Promise<void> {
         if (!endpoint) {
             return

@@ -10,16 +10,48 @@
     flex: 1;
 }
 
+.logoContainer{
+    width: 100%;
+    display:flex;
+    justify: center;
+    align-items: center;
+    flex-direction: column;
+}
+
 .logo {
+    width:auto;
+    max-width: 300px;
+    text-align:center;
+    height: 80px;
     margin-bottom: 1rem;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.link{
+    margin-left:5px;
+}
+
+.desc {
+    /* font-size:12px; */
+    box-sizing: border-box;
+    /* justify-content: center; */
+    padding: 0.25rem;
+    max-width: 300px;
+    width: 100%;
+    /* margin-left: auto;
+    margin-right: auto; */
 }
 
 .button-width-sizer {
     margin-top: 0.5rem;
+    margin-bottom: 0.5rem;
     display: flex;
     flex-direction: column;
     align-items: center;
     width: 100%;
+    margin-left: auto;
+    margin-right: auto;
 }
 
 .button-stack {
@@ -63,6 +95,7 @@
     box-sizing: border-box;
     justify-content: center;
     padding: 0.25rem;
+    margin-top: 1rem;
     max-width: 300px;
     width: 100%;
     margin-left: auto;
@@ -70,8 +103,11 @@
 }
 
 @media (width >= 640px) {
-    .button {
+    .button{
         margin-left: 0;
+    }
+    .logo {
+        margin-left: 110px;
     }
 }
 

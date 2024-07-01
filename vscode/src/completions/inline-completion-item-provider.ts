@@ -471,6 +471,7 @@ export class InlineCompletionItemProvider
               >
             | CompletionItemID
     ): Promise<void> {
+        console.log('补全接受')
         const completion = suggestedAutocompleteItemsCache.get(completionOrItemId)
 
         if (!completion) {
@@ -538,6 +539,7 @@ export class InlineCompletionItemProvider
     public unstable_handleDidShowCompletionItem(
         completionOrItemId: Pick<AutocompleteItem, 'logId' | 'analyticsItem' | 'span'> | CompletionItemID
     ): void {
+        console.log('补全建议')
         const completion = suggestedAutocompleteItemsCache.get(completionOrItemId)
         if (!completion) {
             return

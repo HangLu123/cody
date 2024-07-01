@@ -1,3 +1,4 @@
+// @ts-nocheck
 import dedent from 'dedent'
 import { isEqual } from 'lodash'
 import { expect } from 'vitest'

@@ -874,7 +874,7 @@
         "cody.chat.serverEndpoint": {
           "order": 1,
           "type": "string",
-          "markdownDescription": "这里填写服务管理中部署的fastchat聊天服务的服务地址。例如：https://192.168.73.2:443/dockerService/FastChat-jhadmin-f3d40694-0d83-4f9f-a0a5-979af9c29828/",
+          "markdownDescription": "这里填写服务管理中部署的fastchat聊天服务的服务地址。例如：https://192.168.0.22:443/dockerService/FastChat-pzhlei-a97e31e8-340b-4628-92eb-c594e2d89006/",
           "default": "https://192.168.0.22:443/dockerService/FastChat-pzhlei-a97e31e8-340b-4628-92eb-c594e2d89006/"
         },
         "cody.chat.model": {

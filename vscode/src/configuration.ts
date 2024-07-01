@@ -97,6 +97,7 @@ export function getConfiguration(
         }),
         chatPreInstruction: config.get(CONFIG_KEY.chatPreInstruction, ''),
         editPreInstruction: config.get(CONFIG_KEY.editPreInstruction, ''),
+        chatServerEndpoint: config.get(CONFIG_KEY.chatServerEndpoint, ''),
         commandCodeLenses: config.get(CONFIG_KEY.commandCodeLenses, false),
         autocompleteAdvancedProvider,
         autocompleteAdvancedModel: config.get<string | null>(CONFIG_KEY.autocompleteAdvancedModel, null),
