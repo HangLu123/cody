@@ -1,3 +1,4 @@
+import * as vscode from 'vscode'
 import { XMLParser } from 'fast-xml-parser'
 
 import {
@@ -50,21 +51,19 @@ async function doRewrite(
     completionsClient: SourcegraphCompletionsClient,
     query: PromptString
 ): Promise<string[]> {
-    const preamble = getSimplePreamble(undefined, 0)
+    const model = vscode.workspace.getConfiguration().get('jody.chat.model')
     const stream = completionsClient.stream(
         {
+            model,
             messages: [
-                ...preamble,
                 {
-                    speaker: 'human',
-                    text: ps`You are helping the user search over a codebase. List some filename fragments that would match files relevant to read to answer the user's query. Present your results in a *single* XML list in the following format: <keywords><keyword><value>a single keyword</value><variants>a space separated list of synonyms and variants of the keyword, including acronyms, abbreviations, and expansions</variants><weight>a numerical weight between 0.0 and 1.0 that indicates the importance of the keyword</weight></keyword></keywords>. Here is the user query: <userQuery>${query}</userQuery>`,
+                    role: 'user',
+                    content: `You are helping the user search over a codebase. List some filename fragments that would match files relevant to read to answer the user's query. Present your results in a *single* XML list in the following format: <keywords><keyword><value>a single keyword</value><variants>a space separated list of synonyms and variants of the keyword, including acronyms, abbreviations, and expansions</variants><weight>a numerical weight between 0.0 and 1.0 that indicates the importance of the keyword</weight></keyword></keywords>. Here is the user query: <userQuery>${query}</userQuery>`,
                 },
-                { speaker: 'assistant' },
             ],
-            maxTokensToSample: 400,
+            max_tokens: 400,
             temperature: 0,
-            topK: 1,
-            fast: true,
+            stream: true,
         },
         { apiVersion: 0 } // Use legacy API version for now
     )

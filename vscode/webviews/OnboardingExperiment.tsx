@@ -1,155 +1,89 @@
-import { VSCodeButton } from '@vscode/webview-ui-toolkit/react'
+// @ts-nocheck
+import { VSCodeButton, VSCodeTextField, VSCodeLink } from '@vscode/webview-ui-toolkit/react'
 
-import type { TelemetryRecorder } from '@sourcegraph/cody-shared'
+import type { TelemetryService } from '@sourcegraph/cody-shared'
 
 import type { AuthMethod } from '../src/chat/protocol'
 
-import onboardingSplashImage from './cody-onboarding-splash.svg'
-import signInLogoGitHub from './sign-in-logo-github.svg'
-import signInLogoGitLab from './sign-in-logo-gitlab.svg'
-import signInLogoGoogle from './sign-in-logo-google.svg'
 import type { VSCodeWrapper } from './utils/VSCodeApi'
 
 import styles from './OnboardingExperiment.module.css'
-import { useTelemetryRecorder } from './utils/telemetry'
+import logo from './logo-small.png'
+import { useState } from 'react'
 
 interface LoginProps {
     simplifiedLoginRedirect: (method: AuthMethod) => void
+    telemetryService: TelemetryService
     uiKindIsWeb: boolean
     vscodeAPI: VSCodeWrapper
-}
-
-const WebLogin: React.FunctionComponent<
-    React.PropsWithoutRef<{
-        telemetryRecorder: TelemetryRecorder
-        vscodeAPI: VSCodeWrapper
-    }>
-> = ({ vscodeAPI }) => {
-    const telemetryRecorder = useTelemetryRecorder()
-    return (
-        <ol>
-            <li>
-                <a href="https://sourcegraph.com/sign-up" target="site">
-                    Sign Up at Sourcegraph.com
-                </a>
-            </li>
-            <li>
-                <a href="https://sourcegraph.com/user/settings/tokens" target="site">
-                    Generate an Access Token
-                </a>
-            </li>
-            <li>
-                <a
-                    href="about:blank"
-                    onClick={event => {
-                        telemetryRecorder.recordEvent('cody.webview.auth', 'clickSignIn')
-                        vscodeAPI.postMessage({
-                            command: 'simplified-onboarding',
-                            onboardingKind: 'web-sign-in-token',
-                        })
-                        event.preventDefault()
-                        event.stopPropagation()
-                    }}
-                >
-                    Add the Access Token to VS Code
-                </a>
-            </li>
-        </ol>
-    )
 }
 
 // A login component which is simplified by not having an app setup flow.
 export const LoginSimplified: React.FunctionComponent<React.PropsWithoutRef<LoginProps>> = ({
     simplifiedLoginRedirect,
-    uiKindIsWeb,
     vscodeAPI,
 }) => {
-    const telemetryRecorder = useTelemetryRecorder()
-    const otherSignInClick = (): void => {
-        vscodeAPI.postMessage({ command: 'auth', authKind: 'signin' })
+    const [userName, setUserName] = useState('')
+    const [password, setPassword] = useState('')
+    const signInClick = (e:any) => {
+        e.preventDefault();
+        vscodeAPI.postMessage({ command: 'login', userName, password })
+    }
+    const applyAcount = (e:any) => {
+        e.preventDefault();
+        vscodeAPI.postMessage({ command: 'apply' })
+    }
+    const configExt = (e:any) => {
+        e.preventDefault();
+        vscodeAPI.postMessage({ command: 'setting' })
     }
     return (
         <div className={styles.container}>
             <div className={styles.sectionsContainer}>
-                <img src={onboardingSplashImage} alt="Hi, I'm Cody" className={styles.logo} />
-                <div className={styles.section}>
-                    <h1>Cody Free or Cody Pro</h1>
+                <form onSubmit={signInClick} className={styles.section}>
+                    <p className={styles.desc}>
+                        登陆前请先完成
+                        <VSCodeLink className={styles.link} onClick={configExt}>
+                            插件配置
+                        </VSCodeLink>
+                    </p>
+                    <p  className={styles.desc}>
+                        无账户？请先
+                        <VSCodeLink className={styles.link} onClick={applyAcount}>
+                            申请账户
+                        </VSCodeLink>
+                    </p>
+                    <p  className={styles.logoContainer}>
+                        <img src={logo} alt="Hi, I'm Jody" className={styles.logo} />
+                        <h1>Jody</h1>
+                        <h1>请使用景行门户账号登录</h1>
+                    </p>
+
                     <div className={styles.buttonWidthSizer}>
                         <div className={styles.buttonStack}>
-                            {uiKindIsWeb ? (
-                                <WebLogin telemetryRecorder={telemetryRecorder} vscodeAPI={vscodeAPI} />
-                            ) : (
-                                <>
-                                    <VSCodeButton
-                                        className={styles.button}
-                                        type="button"
-                                        onClick={() => {
-                                            telemetryRecorder.recordEvent(
-                                                'cody.webview.auth',
-                                                'simplifiedSignInGitLabClick'
-                                            )
-                                            simplifiedLoginRedirect('github')
-                                        }}
-                                    >
-                                        <img src={signInLogoGitHub} alt="GitHub logo" />
-                                        Sign In with GitHub
-                                    </VSCodeButton>
-                                    <VSCodeButton
-                                        className={styles.button}
-                                        type="button"
-                                        onClick={() => {
-                                            telemetryRecorder.recordEvent(
-                                                'cody.webview.auth',
-                                                'simplifiedSignInGitLabClick'
-                                            )
-                                            simplifiedLoginRedirect('gitlab')
-                                        }}
-                                    >
-                                        <img src={signInLogoGitLab} alt="GitLab logo" />
-                                        Sign In with GitLab
-                                    </VSCodeButton>
-                                    <VSCodeButton
-                                        className={styles.button}
-                                        type="button"
-                                        onClick={() => {
-                                            telemetryRecorder.recordEvent(
-                                                'cody.webview.auth',
-                                                'simplifiedSignInGoogleClick'
-                                            )
-                                            simplifiedLoginRedirect('google')
-                                        }}
-                                    >
-                                        <img src={signInLogoGoogle} alt="Google logo" />
-                                        Sign In with Google
-                                    </VSCodeButton>
-                                </>
-                            )}
+                            <VSCodeTextField
+                                placeholder="登录账号"
+                                value={userName}
+                                onInput={(e: any) => setUserName(e.target.value)}
+                                className={styles.button}
+                            />
+                            <VSCodeTextField
+                                placeholder="密码"
+                                type="password"
+                                value={password}
+                                onInput={(e: any) => setPassword(e.target.value)}
+                                className={styles.button}
+                            />
                         </div>
                     </div>
-                </div>
-                <div className={styles.section}>
-                    <h1>Cody Enterprise</h1>
                     <div className={styles.buttonWidthSizer}>
                         <div className={styles.buttonStack}>
-                            <VSCodeButton
-                                className={styles.button}
-                                type="button"
-                                onClick={otherSignInClick}
-                            >
-                                Sign In to Your Enterprise&nbsp;Instance
+                            <VSCodeButton className={styles.button} type="submit">
+                                登录
                             </VSCodeButton>
                         </div>
                     </div>
-                    <p>
-                        Learn more about{' '}
-                        <a href="https://sourcegraph.com/cloud">Sourcegraph Enterprise</a>
-                    </p>
-                </div>
-            </div>
-            <div className={styles.terms}>
-                By signing in to Cody you agree to our{' '}
-                <a href="https://about.sourcegraph.com/terms">Terms of Service</a> and{' '}
-                <a href="https://about.sourcegraph.com/terms/privacy">Privacy Policy</a>
+                </form>
             </div>
         </div>
     )

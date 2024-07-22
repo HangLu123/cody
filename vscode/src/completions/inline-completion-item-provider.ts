@@ -1,3 +1,4 @@
+//@ts-nocheck
 import * as vscode from 'vscode'
 
 import {
@@ -504,6 +505,8 @@ export class InlineCompletionItemProvider
               >
             | CompletionItemID
     ): Promise<void> {
+        console.log('补全接受')
+        this.config.authProvider.logAction('Completion-Accept');
         const completion = suggestedAutocompleteItemsCache.get(completionOrItemId)
 
         if (!completion) {
@@ -571,6 +574,8 @@ export class InlineCompletionItemProvider
     public unstable_handleDidShowCompletionItem(
         completionOrItemId: Pick<AutocompleteItem, 'logId' | 'analyticsItem' | 'span'> | CompletionItemID
     ): void {
+        console.log('补全建议')
+        this.config.authProvider.logAction('Completion-Suggestions');
         const completion = suggestedAutocompleteItemsCache.get(completionOrItemId)
         if (!completion) {
             return

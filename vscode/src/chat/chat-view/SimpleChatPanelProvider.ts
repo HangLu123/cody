@@ -1,3 +1,4 @@
+//@ts-nocheck
 import * as uuid from 'uuid'
 import * as vscode from 'vscode'
 
@@ -78,8 +79,10 @@ import { logDebug } from '../../log'
 import { chatModel } from '../../models'
 import { migrateAndNotifyForOutdatedModels } from '../../models/modelMigrator'
 import { gitCommitIdFromGitExtension } from '../../repository/git-extension-api'
-import type { AuthProvider } from '../../services/AuthProvider'
+// import type { AuthProvider } from '../../services/AuthProvider'
+import { AlwaysAuthProvider as AuthProvider } from '../../services/AlwaysAuthProvider'
 import { AuthProviderSimplified } from '../../services/AuthProviderSimplified'
+import { localStorage } from '../../services/LocalStorageProvider'
 import { recordExposedExperimentsToSpan } from '../../services/open-telemetry/utils'
 import {
     handleCodeFromInsertAtCursor,
@@ -283,6 +286,75 @@ export class SimpleChatPanelProvider
      */
     private async onDidReceiveMessage(message: WebviewMessage): Promise<void> {
         switch (message.command) {
+            case 'login':
+                process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
+                try {
+                    const serverEndpoint:any =
+                    vscode.workspace.getConfiguration().get('jody.chat.serverEndpoint')||vscode.workspace.getConfiguration().get('jody.autocomplete.advanced.serverEndpoint')
+                    const jhServer = vscode.workspace.getConfiguration().get('jody.jhServer')
+                    if (serverEndpoint?.includes('dockerService') || jhServer) {
+                        const baseUrl = jhServer ||  `${serverEndpoint.split(':')[0]}:${serverEndpoint.split(':')[1].split(':')[0]}`
+                        const response: any = await fetch(
+                            `${baseUrl}jhai/jody/token?name=${message.userName}&pwd=${message.password}`,
+                            {
+                                method: 'GET',
+                                headers: { 'Content-Type': 'application/json' },
+                            }
+                        );
+
+                        // 检查响应状态码
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+
+                        // 解析返回的 JSON 数据
+                        const data = await response.json();
+
+                        if (!data.isSuccess) {
+                            void vscode.window.showErrorMessage(
+                                data.messages.error[0]
+                            )
+                            // 在这里处理登录失败的逻辑
+                        } else {
+                            localStorage.set('jhai-token', data.messages.success[0])
+                            localStorage.set('jhai-user', message.userName)
+                            const authStatus = await this.authProvider.auth('', '', {} ,true)
+                            void vscode.window.showInformationMessage('登录成功')
+                            this.authProvider.logAction('login')
+                        }
+                    }else{
+                        void vscode.window.showErrorMessage(
+                            '请先按照文档完成插件配置'
+                        )
+                        vscode.commands.executeCommand('cody.settings.extension')
+                    }
+                } catch (error) {
+                    console.error('Fetch error:', error);
+                    // 在这里处理 fetch 错误
+                    void vscode.window.showErrorMessage(
+                        '请先按照文档完成插件配置'
+                    )
+                    vscode.commands.executeCommand('cody.settings.extension')
+                }
+                break
+            case 'apply':
+                const serverEndpoint:any =
+                    vscode.workspace.getConfiguration().get('jody.autocomplete.advanced.serverEndpoint') ||
+                    vscode.workspace.getConfiguration().get('cody.chat.advanced.serverEndpoint')
+                const jhServer = vscode.workspace.getConfiguration().get('jody.jhServer')
+                if (serverEndpoint?.includes('dockerService') || jhServer) {
+                    const baseUrl = jhServer ||  `${serverEndpoint.split(':')[0]}:${serverEndpoint.split(':')[1].split(':')[0]}`
+                    vscode.env.openExternal(vscode.Uri.parse(baseUrl));
+                }else{
+                    void vscode.window.showErrorMessage(
+                        '请先配置服务地址'
+                    )
+                }
+
+                break
+            case 'setting':
+                vscode.commands.executeCommand('cody.settings.extension')
+                break
             case 'ready':
                 await this.handleReady()
                 break
@@ -1110,15 +1182,17 @@ export class SimpleChatPanelProvider
         if (!authStatus?.isLoggedIn) {
             return
         }
-        const models = ModelsService.getModels(
+        const model = ModelsService.getModels(
             ModelUsage.Chat,
             authStatus.isDotCom && !authStatus.userCanUpgrade,
             this.chatModel.modelID
-        )
+        )[0]
+        model.title = vscode.workspace.getConfiguration().get('jody.chat.model')
+        model.model = vscode.workspace.getConfiguration().get('jody.chat.model')
 
         void this.postMessage({
             type: 'chatModels',
-            models,
+            models:[model],
         })
     }
 
@@ -1316,13 +1390,21 @@ export class SimpleChatPanelProvider
             const stream = this.chatClient.chat(
                 prompt,
                 {
-                    model: this.chatModel.modelID,
-                    maxTokensToSample: this.chatModel.contextWindow.output,
+                    model: vscode.workspace.getConfiguration().get('jody.chat.model'),
+                    maxTokensToSample: vscode.workspace.getConfiguration().get('jody.chat.max_tokens'),
                 },
                 abortSignal
             )
 
             for await (const message of stream) {
+                if(!this.submitOrEditOperation){
+                    setTimeout(() => {
+                        typewriter.close()
+                        typewriter.stop()
+                    }, 0);
+
+                        return
+                }
                 switch (message.type) {
                     case 'change': {
                         typewriter.update(message.text)
@@ -1343,6 +1425,7 @@ export class SimpleChatPanelProvider
             typewriter.close()
             typewriter.stop(isAbortErrorOrSocketHangUp(error as Error) ? undefined : (error as Error))
         }
+        this.authProvider.logAction('chat')
     }
 
     /**

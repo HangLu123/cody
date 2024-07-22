@@ -81,8 +81,9 @@ export async function handleCodeFromInsertAtCursor(text: string): Promise<void> 
     }
 
     const edit = new vscode.WorkspaceEdit()
+    const range = new vscode.Range(selectionRange.start, selectionRange.end)
     // trimEnd() to remove new line added by Cody
-    edit.insert(activeEditor.document.uri, selectionRange.start, `${text}\n`)
+    edit.replace(activeEditor.document.uri, range, `${text}\n`)
     await vscode.workspace.applyEdit(edit)
 
     // Log insert event

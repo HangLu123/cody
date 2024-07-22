@@ -56,7 +56,7 @@ export class CommandCodeLenses implements vscode.CodeLensProvider {
      * Update the configurations
      */
     private updateConfig(): void {
-        const config = vscode.workspace.getConfiguration('cody')
+        const config = vscode.workspace.getConfiguration('jody')
         this.isEnabled = config.get('commandCodeLenses') as boolean
         this.addTestEnabled = config.get('internal.unstable') as boolean
 
@@ -189,7 +189,7 @@ export class CommandCodeLenses implements vscode.CodeLensProvider {
 
 const commandLenses = {
     cody: {
-        title: '$(cody-logo) Cody',
+        title: '$(cody-logo) Jody',
         command: 'cody.editor.codelens.click',
         tooltip: 'Open command menu',
     },

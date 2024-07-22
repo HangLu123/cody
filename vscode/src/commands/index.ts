@@ -71,7 +71,7 @@ export const CodyCommandMenuItems: MenuCommandAccessor[] = [
         icon: 'git-commit',
         command: { command: 'cody.command.generate-commit' },
         keybinding: '',
-        requires: { setting: 'cody.experimental.commitMessage' },
+        requires: { setting: 'jody.experimental.commitMessage' },
     },
     {
         key: 'custom',

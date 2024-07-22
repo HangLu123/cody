@@ -34,7 +34,7 @@ export function getConfiguration(
     const isTesting = process.env.CODY_TESTING === 'true'
 
     function getHiddenSetting<T>(configKey: string, defaultValue?: T): T {
-        return config.get<T>(`cody.${configKey}` as any, defaultValue)
+        return config.get<T>(`jody.${configKey}` as any, defaultValue)
     }
 
     let debugRegex: RegExp | null = null
@@ -73,15 +73,12 @@ export function getConfiguration(
     }
 
     // check if the configured enum values are valid
-    const configKeys = [
-        'autocompleteAdvancedProvider',
-        'autocompleteAdvancedModel',
-    ] as (keyof ConfigurationKeysMap)[]
+    const configKeys = ['autocompleteAdvancedProvider'] as (keyof ConfigurationKeysMap)[]
 
     for (const configVal of configKeys) {
         const key = configVal.replaceAll(/([A-Z])/g, '.$1').toLowerCase()
         const value: string | null = config.get(CONFIG_KEY[configVal])
-        checkValidEnumValues(key, value)
+        // checkValidEnumValues(key, value)
     }
 
     const autocompleteExperimentalGraphContext: 'lsp-light' | 'bfg' | null = getHiddenSetting(
@@ -137,8 +134,8 @@ export function getConfiguration(
         internalUnstable: getHiddenSetting('internal.unstable', isTesting),
 
         autocompleteExperimentalGraphContext,
-        experimentalCommitMessage: getHiddenSetting('experimental.commitMessage', true),
-        experimentalNoodle: getHiddenSetting('experimental.noodle', false),
+        experimentalCommitMessage: true,
+        experimentalNoodle: true,
 
         experimentalTracing: getHiddenSetting('experimental.tracing', false),
 

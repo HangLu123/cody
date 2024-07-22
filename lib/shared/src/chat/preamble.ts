@@ -6,7 +6,7 @@ export function getSimplePreamble(
     apiVersion: number,
     preInstruction?: PromptString
 ): Message[] {
-    const intro = ps`You are Cody, an AI coding assistant from Sourcegraph. ${
+    const intro = ps`You are Jody, an AI coding assistant from jhinno. ${
         preInstruction ?? ''
     }`.trim()
 
@@ -28,7 +28,7 @@ export function getSimplePreamble(
         },
         {
             speaker: 'assistant',
-            text: ps`I am Cody, an AI coding assistant from Sourcegraph.`,
+            text: ps`I am Jody, an AI coding assistant from jhinno.`,
         },
     ]
 }

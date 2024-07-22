@@ -1,10 +1,7 @@
-// The node client can not live in lib/shared (with its browserClient
-// counterpart) since it requires node-only APIs. These can't be part of
-// the main `lib/shared` bundle since it would otherwise not work in the
-// web build.
-
+// @ts-nocheck
 import http from 'node:http'
 import https from 'node:https'
+import * as vscode from 'vscode'
 
 import {
     type CompletionCallbacks,
@@ -33,7 +30,8 @@ const isTemperatureZero = process.env.CODY_TEMPERATURE_ZERO === 'true'
 export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClient {
     protected _streamWithCallbacks(
         params: CompletionParameters,
-        requestParams: CompletionRequestParameters,
+        requestParams: CompletionRequestParameters =
+        { apiVersion: 0 } ,
         cb: CompletionCallbacks,
         signal?: AbortSignal
     ): Promise<void> {
@@ -62,11 +60,13 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                 }
             }
 
-            const serializedParams = await getSerializedParams(params)
+            const serializedParams = params
 
             const log = this.logger?.startCompletion(params, url.toString())
-
-            const requestFn = url.protocol === 'https:' ? https.request : http.request
+            const chatUrl = `${vscode.workspace.getConfiguration().get('jody.chat.serverEndpoint')}v1/chat/completions`;
+            const requestFn = chatUrl.startsWith('https://')
+                ? https.request
+                : http.request
 
             // Keep track if we have send any message to the completion callbacks
             let didSendMessage = false
@@ -82,31 +82,23 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                     didSendError = true
                 }
             }
-
+            process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
             // Text which has not been decoded as a server-sent event (SSE)
             let bufferText = ''
-
+            const accessToken = vscode.workspace
+                .getConfiguration()
+                .get('jody.autocomplete.advanced.accessToken')
             const request = requestFn(
-                url,
+                chatUrl,
                 {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        // Disable gzip compression since the sg instance will start to batch
-                        // responses afterwards.
-                        'Accept-Encoding': 'gzip;q=0',
-                        ...(this.config.accessToken
-                            ? { Authorization: `token ${this.config.accessToken}` }
-                            : null),
-                        ...(customUserAgent ? { 'User-Agent': customUserAgent } : null),
-                        ...this.config.customHeaders,
-                        ...requestParams.customHeaders,
-                        ...getTraceparentHeaders(),
-                        Connection: 'keep-alive',
+                        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : null),
                     },
                     // So we can send requests to the Sourcegraph local development instance, which has an incompatible cert.
-                    rejectUnauthorized: process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '0',
-                    agent: agent.current?.(url),
+                    rejectUnauthorized:
+                        process.env.NODE_TLS_REJECT_UNAUTHORIZED !== '0' && !this.config.debugEnable,
                 },
                 (res: http.IncomingMessage) => {
                     const { 'set-cookie': _setCookie, ...safeHeaders } = res.headers
@@ -189,6 +181,10 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
 
                     // Bytes which have not been decoded as UTF-8 text
                     let bufferBin = Buffer.of()
+                    // Text which has not been decoded as a server-sent event (SSE)
+
+                    let completionEvents: any = []
+                    let completionText = ''
 
                     res.on('data', chunk => {
                         if (!(chunk instanceof Buffer)) {
@@ -209,11 +205,53 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                             )
                             return
                         }
+                        completionEvents = [...completionEvents, ...parseResult.events]
 
                         didSendMessage = true
-                        didReceiveAnyEvent = didReceiveAnyEvent || parseResult.events.length > 0
-                        log?.onEvents(parseResult.events)
-                        this.sendEvents(parseResult.events, cb, span)
+                        for (let i = 0; i < parseResult.events.length; i++) {
+                            if (parseResult.events[i].type === 'completion') {
+                                completionText += parseResult.events[i].completion
+                            }
+                        }
+                        console.log(completionText, 'completionText')
+                        if (parseResult.events.length) {
+                            this.sendEvents(
+                                [
+                                    {
+                                        type: 'completion',
+                                        completion: completionText,
+                                        stopReason: '',
+                                    },
+                                ],
+                                cb,
+                                span
+                            )
+                            if (parseResult.events[parseResult.events.length - 1].type === 'done') {
+                                this.sendEvents(
+                                    [
+                                        {
+                                            type: 'done',
+                                        },
+                                    ],
+                                    cb,
+                                    span
+                                )
+                            }
+                        } else {
+                            this.sendEvents(
+                                completionText
+                                    ? [
+                                          {
+                                              type: 'completion',
+                                              completion: completionText,
+                                              stopReason: '',
+                                          },
+                                      ]
+                                    : [],
+                                cb,
+                                span
+                            )
+                        }
                         bufferText = parseResult.remainingBuffer
                     })
 
@@ -256,7 +294,10 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
             request.write(JSON.stringify(serializedParams))
             request.end()
 
-            onAbort(signal, () => request.destroy())
+            onAbort(signal, () => {
+                console.log(123)
+                request.destroy()
+            })
         })
     }
 }

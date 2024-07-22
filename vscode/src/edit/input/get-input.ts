@@ -94,7 +94,7 @@ export const getInput = async (
     const isCodyPro = !authStatus.userCanUpgrade
     const modelOptions = getEditModelsForUser(authStatus)
     const modelItems = getModelOptionItems(modelOptions, isCodyPro)
-    const showModelSelector = modelOptions.length > 1 && authStatus.isDotCom
+    const showModelSelector = false
 
     let activeModel = initialValues.initialModel
     let activeModelItem = modelItems.find(item => item.model === initialValues.initialModel)

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import {
     type CodeCompletionsClient,
     type ConfigurationWithAccessToken,
@@ -7,7 +8,8 @@ import {
 import * as vscode from 'vscode'
 
 import { logDebug } from '../log'
-import type { AuthProvider } from '../services/AuthProvider'
+// import type { AuthProvider } from '../services/AuthProvider'
+import { AlwaysAuthProvider as AuthProvider } from '../services/AlwaysAuthProvider'
 import type { CodyStatusBar } from '../services/StatusBar'
 
 import { completionProviderConfig } from './completion-provider-config'
@@ -76,6 +78,7 @@ export async function createInlineCompletionItemProvider({
     if (providerConfig) {
         const authStatus = authProvider.getAuthStatus()
         const completionsProvider = new InlineCompletionItemProvider({
+            authProvider,
             authStatus,
             providerConfig,
             firstCompletionTimeout: config.autocompleteFirstCompletionTimeout,

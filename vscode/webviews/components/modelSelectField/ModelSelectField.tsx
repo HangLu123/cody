@@ -86,7 +86,7 @@ export const ModelSelectField: React.FunctionComponent<{
         [telemetryRecorder.recordEvent, showCodyProBadge, parentOnModelSelect, isCodyProUser]
     )
 
-    const readOnly = !userInfo.isDotComUser
+    const readOnly = true
 
     const onOpenChange = useCallback(
         (open: boolean): void => {

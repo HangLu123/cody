@@ -81,7 +81,7 @@ export function parseEvents(eventsBuffer: string): EventsParseResult | Error {
 
     const events: Event[] = []
     while (eventEndIndex >= 0) {
-        const event = parseEvent(eventsBuffer.slice(eventStartIndex, eventEndIndex))
+        const event = parseSSEData(eventsBuffer.slice(eventStartIndex, eventEndIndex))
         if (isError(event)) {
             return event
         }
@@ -92,4 +92,25 @@ export function parseEvents(eventsBuffer: string): EventsParseResult | Error {
     }
 
     return { events, remainingBuffer: eventsBuffer.slice(eventStartIndex) }
+}
+
+export function parseSSEData(dataLine: string): Event | Error {
+    if (!dataLine.startsWith(DATA_LINE_PREFIX)) {
+        return new Error(`cannot parse event data: ${dataLine}`)
+    }
+    const jsonData = dataLine.trim().replace(DATA_LINE_PREFIX, '')
+
+    if (jsonData.includes('[DONE]')) {
+        return { type: 'done' }
+    }
+    const data = parseJSON<any>(jsonData)
+    if (isError(data)) {
+        return data
+    }
+
+    return {
+        type: 'completion',
+        completion: data.choices[0].delta.content ? data.choices[0].delta.content : '',
+        stopReason: '',
+    }
 }

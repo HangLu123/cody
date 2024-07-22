@@ -15,17 +15,17 @@ export { CommandMenuOption } from './options'
 
 export const CommandMenuTitleItem = {
     default: {
-        title: `Cody Commands (Shortcut: ${platform() === 'darwin' ? '⌥' : 'Alt+'}C)`,
+        title: `Jody Commands (Shortcut: ${platform() === 'darwin' ? '⌥' : 'Alt+'}C)`,
         placeHolder: 'Search for a command or enter your question here...',
         buttons: [CommandMenuButtons.gear] as CommandMenuButton[],
     },
     custom: {
-        title: 'Cody: Custom Commands (Beta)',
+        title: 'Jody: Custom Commands (Beta)',
         placeHolder: 'Search command to run...',
         buttons: [CommandMenuButtons.back, CommandMenuButtons.gear] as CommandMenuButton[],
     },
     config: {
-        title: 'Cody: Configure Custom Commands (Beta)',
+        title: 'Jody: Configure Custom Commands (Beta)',
         placeHolder: 'Choose an option',
         buttons: [CommandMenuButtons.back] as CommandMenuButton[],
     },
@@ -61,13 +61,6 @@ export const CustomCommandConfigMenuItems = [
         command: 'cody.commands.open.json',
     },
     { kind: -1, id: 'separator', label: '' },
-    {
-        kind: 0,
-        label: 'Open Custom Commands Documentation',
-        id: 'docs',
-        type: CustomCommandType.User,
-        command: 'cody.commands.open.doc',
-    },
 ] as CommandMenuItem[]
 
 // List of context types to include with the prompt

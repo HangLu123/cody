@@ -16,6 +16,7 @@
   "include": [
     "src",
     "src/commands/execute/cody.json",
+    "src/commands/execute/cody_zh.json",
     "test/fixtures",
     "playwright.config.ts",
     "test/e2e",

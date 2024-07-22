@@ -54,7 +54,6 @@ export const SYMBOL_CONTEXT_MENTION_PROVIDER: ContextMentionProviderMetadata & {
 export async function allMentionProvidersMetadata(): Promise<ContextMentionProviderMetadata[]> {
     const items = [
         FILE_CONTEXT_MENTION_PROVIDER,
-        SYMBOL_CONTEXT_MENTION_PROVIDER,
         ...(await openCtxMentionProviders()),
     ]
 

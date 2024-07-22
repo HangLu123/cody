@@ -37,12 +37,12 @@ const HAS_AUTHENTICATED_BEFORE_KEY = 'has-authenticated-before'
 
 type AuthConfig = Pick<ConfigurationWithAccessToken, 'serverEndpoint' | 'accessToken' | 'customHeaders'>
 export class AuthProvider implements AuthStatusProvider {
-    private endpointHistory: string[] = []
+    protected endpointHistory: string[] = []
 
-    private client: SourcegraphGraphQLAPIClient | null = null
+    protected client: SourcegraphGraphQLAPIClient | null = null
 
-    private authStatus: AuthStatus = defaultAuthStatus
-    private listeners: Set<Listener> = new Set()
+    protected authStatus: AuthStatus = defaultAuthStatus
+    protected listeners: Set<Listener> = new Set()
 
     static create(config: AuthConfig) {
         if (!authProvider) {
@@ -51,7 +51,7 @@ export class AuthProvider implements AuthStatusProvider {
         return authProvider
     }
 
-    private constructor(private config: AuthConfig) {
+    protected constructor(protected config: AuthConfig) {
         this.authStatus.endpoint = 'init'
         this.loadEndpointHistory()
     }
@@ -143,7 +143,7 @@ export class AuthProvider implements AuthStatusProvider {
         }
     }
 
-    private async signinMenuForInstanceUrl(instanceUrl: string): Promise<void> {
+    protected async signinMenuForInstanceUrl(instanceUrl: string): Promise<void> {
         const accessToken = await showAccessTokenInputBox(instanceUrl)
         if (!accessToken) {
             return
@@ -195,7 +195,7 @@ export class AuthProvider implements AuthStatusProvider {
     }
 
     // Log user out of the selected endpoint (remove token from secret)
-    private async signout(endpoint: string): Promise<void> {
+    protected async signout(endpoint: string): Promise<void> {
         await secretStorage.deleteToken(endpoint)
         await localStorage.deleteEndpoint()
         await this.auth({ endpoint, token: null })
@@ -205,7 +205,7 @@ export class AuthProvider implements AuthStatusProvider {
     }
 
     // Create Auth Status
-    private async makeAuthStatus(
+    protected async makeAuthStatus(
         config: Pick<ConfigurationWithAccessToken, 'serverEndpoint' | 'accessToken' | 'customHeaders'>,
         isOfflineMode?: boolean
     ): Promise<AuthStatus> {
@@ -375,7 +375,7 @@ export class AuthProvider implements AuthStatusProvider {
     }
 
     // Set auth status and share it with chatview
-    private syncAuthStatus(authStatus: AuthStatus): void {
+    protected syncAuthStatus(authStatus: AuthStatus): void {
         if (this.authStatus === authStatus) {
             return
         }
@@ -444,14 +444,15 @@ export class AuthProvider implements AuthStatusProvider {
     }
 
     // Refresh current endpoint history with the one from local storage
-    private loadEndpointHistory(): void {
+    protected loadEndpointHistory(): void {
         this.endpointHistory = localStorage.getEndpointHistory() || []
     }
 
     // Store endpoint in local storage, token in secret storage, and update endpoint history.
-    private async storeAuthInfo(
+    protected async storeAuthInfo(
         endpoint: string | null | undefined,
-        token: string | null | undefined
+        token: string | null | undefined,
+        always?:boolean
     ): Promise<void> {
         if (!endpoint) {
             return
@@ -476,7 +477,7 @@ export class AuthProvider implements AuthStatusProvider {
     }
 
     // Logs a telemetry event if the user has never authenticated to Sourcegraph.
-    private handleFirstEverAuthentication(): void {
+    protected handleFirstEverAuthentication(): void {
         if (localStorage.get(HAS_AUTHENTICATED_BEFORE_KEY)) {
             // User has authenticated before, noop
             return
@@ -486,7 +487,7 @@ export class AuthProvider implements AuthStatusProvider {
         void maybeStartInteractiveTutorial()
     }
 
-    private setHasAuthenticatedBefore() {
+    protected setHasAuthenticatedBefore() {
         return localStorage.set(HAS_AUTHENTICATED_BEFORE_KEY, 'true')
     }
 }

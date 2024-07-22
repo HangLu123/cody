@@ -1,80 +1,53 @@
-# AI that uses your codebase as context
+# AI编程助手 
 
-[Cody](https://about.sourcegraph.com/cody?utm_source=marketplace.visualstudio.com&utm_medium=referral) is an AI coding assistant that helps you understand, write, and fix code faster. It uses advanced search to pull context from both local and remote codebases so that you can use context about APIs, symbols, and usage patterns from across your entire codebase at any scale, all from within VS Code. Plus, Cody Pro users can choose from the latest large language models—like GPT-4o and Claude 3 Opus—to customize Cody to their needs.
+这是一个AI编码辅助工具，能够加速你理解、编写及修复代码的过程。它运用高级搜索技术，从本地代码中提取信息，使你能够在任何规模的项目中，直接在Visual Studio Code内充分利用上下文信息。
 
-Install Cody to get started with free AI-powered autocomplete, chat, commands, and more.
+## 功能特点
 
-## Autocomplete
+### 自动补全
 
-Cody autocompletes single lines, or whole functions, in any programming language, configuration file, or documentation. It’s powered by the latest instant LLM models, for accuracy and performance.
+该功能支持任意编程语言、配置文件或文档的单行乃至整个函数自动补全，依托最新的即时LLM模型，确保高准确度与性能表现。通过智能预测，减少重复劳动，提高编码效率。
 
-<img src="https://storage.googleapis.com/sourcegraph-assets/blog/vs-code-onboarding-walkthrough-dec-2023-cody-autocomplete-tsx.gif" width="480" alt="Cody autocomplete">
+### 聊天查询
 
-## Chat
+无论是通用编程话题还是特定代码库问题，都能得到解答。例如，你可以询问：
 
-Answer questions about programming topics generally or your codebase specifically with Cody chat. Enable Cody to include Enhanced Context of your open project, or tag specific files and symbols to refine your chat prompt.
+- 我们应用在Linux上的密钥存储是如何实现的？
+- Web集成测试的CI配置在哪里？
+- 为AuditLog编写一个新的GraphQL解析器。
+- UserConnectionResolver出现“未知用户”错误的原因是什么？如何解决？
+- 添加有益的调试日志语句。
+- 让这段代码运行起来。
 
-For example, you can ask Cody:
+通过与AI Assistant的互动，你可以在开发过程中实时获取帮助，解决各种问题。
 
-- "How is our app's secret storage implemented on Linux?"
-- "Where is the CI config for the web integration tests?"
-- "Write a new GraphQL resolver for the AuditLog"
-- "Why is the UserConnectionResolver giving an "unknown user" error, and how do I fix it?"
-- "Add helpful debug log statements"
-- "Make this work" _(seriously, it often works—try it!)_
+### 内置命令
 
-<img src="https://storage.googleapis.com/sourcegraph-assets/blog/blog-vscode-v018-release/blog-v018-context-controls-002.gif" width="480" alt="Cody Chat">
+通过使用命令来简化开发流程，无论是理解、优化、修复代码，还是生成注释和单元测试。例如：
 
-## Built-In Commands
+- `理解代码`：快速理解复杂代码片段。
+- `优化代码`：自动优化代码，提高运行效率。
+- `修复代码`：智能检测并修复常见错误。
+- `生成注释`：为代码自动生成注释，提升可读性。
+- `生成单元测试`：根据代码自动生成单元测试，保证代码质量。
 
-Streamline your development process by using Cody commands to understand, improve, fix, document, and generate unit tests for your code.
+### 自定义命令（Beta）
 
-<img src="https://storage.googleapis.com/sourcegraph-assets/blog/vs-code-onboarding-walkthrough-dec-2023-explain.gif" width="480" alt="Explain Code command">
+你还可以创建自己的[自定义命令（Beta）]。这些命令以JSON形式定义于你的仓库中，并能保存到工作区，以便团队成员复用。通过自定义命令，你可以：
 
-## Custom Commands (Beta)
+- 定义专属的代码规范和标准。
+- 创建自动化工作流，提高团队协作效率。
+- 定制特定的开发工具，满足项目需求。
 
-You can also build your own [Custom Commands (Beta)](https://sourcegraph.com/docs/cody/capabilities/commands#custom-commands) to tailor Cody to your workflow. Custom Commands are defined as JSON within your repository and can be saved to your workspace for your teammates to reuse.
+### 兼容OpenAI API
 
-<img src="https://storage.googleapis.com/sourcegraph-assets/blog/vs-code-onboarding-walkthrough-dec-2023-convert-html-to-md.gif" width="480" alt="Custom command">
+适配OpenAI API，确保与现有AI生态系统的无缝集成。通过与OpenAI API的兼容，AI Assistant能够利用最先进的语言模型技术，提供强大的智能编码辅助功能。
 
-## Choose Your LLM
+## 安装与配置
 
-Cody Pro users can now select the LLM they want to use for chat and experiment to choose the best model for the job. Choose from Claude 3 Opus, Claude 3.5 Sonnet, Claude 3 Sonnet, Claude 3 Haiku, ChatGPT 4o, ChatGPT 4 Turbo, ChatGPT 3.5 Turbo, Google Gemini 1.5 Pro, Gemini 1.5 Flash, and Mixtral.
+1. 安装Jody扩展。
+2. 在侧边栏打开Jody扩展页面，点击插件配置。
+3. 完成聊天服务 URL，补全服务 URL和Jh Sever的配置。
+4. 使用Jh Sever相应的用户名和密码完成登录。
 
-Administrators for Sourcegraph Enterprise instances can choose betweeen Claude and ChatGPT models to set for their teams as well.
-
-## Usage
-
-This extension works for all Cody plans, including Cody Free, Cody Pro, and Cody Enterprise.
-
-You can find detailed information about Cody's available plans [on our website](https://sourcegraph.com/pricing?utm_source=marketplace.visualstudio.com&utm_medium=referral).
-
-## Programming Languages
-
-Cody works for any programming language because it uses LLMs trained on broad data. Cody works great with Python, Go, JavaScript, and TypeScript code.
-
-## Code Search
-
-Cody is powered by Sourcegraph’s code search, which it uses to retrieve context from your codebase and extend its capabilities. By using context from entire projects, Cody can give more accurate answers and generate idiomatic code.
-
-For example:
-
-- Ask Cody to generate an API call. Cody can gather context on your API schema to inform the code it writes.
-- Ask Cody to find where in your codebase a specific component is defined. Cody can retrieve and describe the exact files where that component is written.
-- Ask Cody questions that require an understanding of multiple files. For example, ask Cody how frontend data is populated in a React app; Cody can find the React component definitions to understand what data is being passed and where it originates.
-
-## Cody Enterprise
-
-Cody Enterprise can search context from your entire remote codebase using Sourcegraph's code search. This allows Cody to answer questions about all of your code, even the repositories that don't live on your local machine.
-
-[Contact us](https://about.sourcegraph.com/contact/request-info?utm_source=marketplace.visualstudio.com&utm_medium=referral) to set up a trial of Cody Enterprise. If you’re an existing Sourcegraph Enterprise customer, contact your technical advisor.
-
-## Feedback
-
-- [File an issue](https://github.com/sourcegraph/cody/issues/new/choose)
-- [Discord](https://discord.gg/s2qDtYGnAE)
-- [Twitter (@sourcegraph)](https://twitter.com/sourcegraph)
-
-## More Information
-
-See [https://cody.dev/](https://about.sourcegraph.com/cody?utm_source=marketplace.visualstudio.com&utm_medium=referral) for demos, information and more.
+Jody 将帮助你大幅提高开发效率，轻松应对各种编程挑战。

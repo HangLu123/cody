@@ -1,3 +1,4 @@
+import * as vscode from 'vscode'
 import { XMLParser } from 'fast-xml-parser'
 
 import {
@@ -85,7 +86,7 @@ Rewrite the following latest query based on the chat history: <latest_query>${qu
         const messages = promptBuilder.build()
 
         const stream = chatClient.chat(messages, {
-            model: chatModel.modelID,
+            model: vscode.workspace.getConfiguration().get('jody.chat.model'),
             maxTokensToSample: 400,
             temperature: 0,
             topK: 1,

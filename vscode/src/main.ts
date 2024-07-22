@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as vscode from 'vscode'
 
 import {
@@ -66,7 +67,8 @@ import { CodyProExpirationNotifications } from './notifications/cody-pro-expirat
 import { showSetupNotification } from './notifications/setup-notification'
 import { initVSCodeGitApi } from './repository/git-extension-api'
 import { repoNameResolver } from './repository/repo-name-resolver'
-import { AuthProvider } from './services/AuthProvider'
+// import { AuthProvider } from './services/AuthProvider'
+import { AlwaysAuthProvider as AuthProvider } from './services/AlwaysAuthProvider'
 import { CharactersLogger } from './services/CharactersLogger'
 import { showFeedbackSupportQuickPick } from './services/FeedbackOptions'
 import { displayHistoryQuickPick } from './services/HistoryChat'
@@ -425,31 +427,25 @@ const register = async (
         // Auth
         vscode.commands.registerCommand('cody.auth.signin', () => authProvider.signinMenu()),
         vscode.commands.registerCommand('cody.auth.signout', () => authProvider.signoutMenu()),
-        vscode.commands.registerCommand('cody.auth.account', () => authProvider.accountMenu()),
+        vscode.commands.registerCommand('cody.auth.account', () => authProvider.signout()),
         vscode.commands.registerCommand('cody.auth.support', () => showFeedbackSupportQuickPick()),
         vscode.commands.registerCommand('cody.auth.status', () => authProvider.getAuthStatus()), // Used by the agent
-        vscode.commands.registerCommand(
-            'cody.agent.auth.authenticate',
-            async ({ serverEndpoint, accessToken, customHeaders }) => {
-                if (typeof serverEndpoint !== 'string') {
-                    throw new TypeError('serverEndpoint is required')
-                }
-                if (typeof accessToken !== 'string') {
-                    throw new TypeError('accessToken is required')
-                }
-                return (
-                    await authProvider.auth({
-                        endpoint: serverEndpoint,
-                        token: accessToken,
-                        customHeaders,
-                    })
-                ).authStatus
-            }
-        ),
+        // vscode.commands.registerCommand(
+        //     'cody.agent.auth.authenticate',
+        //     async ({ serverEndpoint, accessToken, customHeaders }) => {
+        //         if (typeof serverEndpoint !== 'string') {
+        //             throw new TypeError('serverEndpoint is required')
+        //         }
+        //         if (typeof accessToken !== 'string') {
+        //             throw new TypeError('accessToken is required')
+        //         }
+        //         return (await authProvider.auth(serverEndpoint, accessToken, customHeaders)).authStatus
+        //     }
+        // ),
         // Chat
         vscode.commands.registerCommand('cody.settings.extension', () =>
             vscode.commands.executeCommand('workbench.action.openSettings', {
-                query: '@ext:sourcegraph.cody-ai',
+                query: '@ext:jhinno.jody-ai',
             })
         ),
         vscode.commands.registerCommand('cody.chat.view.popOut', async () => {
@@ -460,7 +456,7 @@ const register = async (
         }),
         vscode.commands.registerCommand('cody.settings.extension.chat', () =>
             vscode.commands.executeCommand('workbench.action.openSettings', {
-                query: '@ext:sourcegraph.cody-ai chat',
+                query: '@ext:jhinno.jody-ai chat',
             })
         ),
         vscode.commands.registerCommand('cody.copy.version', () =>
@@ -543,16 +539,13 @@ const register = async (
         vscode.window.onDidChangeWindowState(async ws => {
             const authStatus = authProvider.getAuthStatus()
             if (ws.focused && authStatus.isDotCom && authStatus.isLoggedIn) {
-                const res = await graphqlClient.getCurrentUserCodyProEnabled()
-                if (res instanceof Error) {
-                    console.error(res)
-                    return
-                }
-                // Re-auth if user's cody pro status has changed
-                const isCurrentCodyProUser = !authStatus.userCanUpgrade
-                if (res.codyProEnabled !== isCurrentCodyProUser) {
-                    authProvider.reloadAuthStatus()
-                }
+                // const res = await graphqlClient.getCurrentUserCodyProEnabled()
+                // if (res instanceof Error) {
+                //     console.error(res)
+                //     return
+                // }
+                // authStatus.userCanUpgrade = !res.codyProEnabled
+                //void chatManager.syncAuthStatus(authStatus)
             }
         }),
         new CodyProExpirationNotifications(

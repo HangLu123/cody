@@ -30,41 +30,24 @@ export class ChatClient {
     ): AsyncGenerator<CompletionGeneratorValue> {
         const authStatus = this.getAuthStatus()
         const useApiV1 = authStatus.codyApiVersion >= 1 && params.model?.includes('claude-3')
-        const isLastMessageFromHuman = messages.length > 0 && messages.at(-1)!.speaker === 'human'
-
-        const isFireworks = params?.model?.startsWith('fireworks/')
-        const augmentedMessages =
-            params?.model?.startsWith('fireworks/') || useApiV1
-                ? sanitizeMessages(messages)
-                : isLastMessageFromHuman
-                  ? messages.concat([{ speaker: 'assistant' }])
-                  : messages
-
-        // We only want to send up the speaker and prompt text, regardless of whatever other fields
-        // might be on the messages objects (`file`, `displayText`, `contextFiles`, etc.).
-        const messagesToSend = augmentedMessages.map(({ speaker, text }) => ({
-            text,
-            speaker,
-        }))
-
-        const completionParams = {
-            ...DEFAULT_CHAT_COMPLETION_PARAMETERS,
-            ...params,
-            messages: messagesToSend,
+        const lastMessage = messages[messages.length - 1]
+        if (lastMessage && lastMessage.speaker === 'assistant') {
+            messages = messages.slice(0, -1)
         }
-
-        // Enabled Fireworks tracing for Sourcegraph teammates.
-        // https://readme.fireworks.ai/docs/enabling-tracing
-        const customHeaders: Record<string, string> =
-            isFireworks && this.getAuthStatus().isFireworksTracingEnabled
-                ? { 'X-Fireworks-Genie': 'true' }
-                : {}
+        messages = messages.map((ele: any, index: number) => {
+            return {
+                role: ele.speaker === 'human' ? 'user' : ele.speaker,
+                content: ele.text,
+            }
+        })
 
         return this.completions.stream(
-            completionParams,
             {
-                apiVersion: useApiV1 ? authStatus.codyApiVersion : 0,
-                customHeaders,
+                model: params.model,
+                max_tokens: params.max_tokens || parseInt(params.maxTokensToSample) || 1000,
+                temperature: 0.2,
+                stream: true,
+                messages,
             },
             abortSignal
         )

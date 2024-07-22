@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { Utils } from 'vscode-uri'
 
 import {
@@ -18,6 +19,7 @@ import type { FixupTask } from '../non-stop/FixupTask'
 import { isNetworkError } from '../services/AuthProvider'
 
 import { workspace } from 'vscode'
+import * as vscode from 'vscode'
 import { doesFileExist } from '../commands/utils/workspace-files'
 import { CodyTaskState } from '../non-stop/utils'
 import { splitSafeMetadata } from '../services/telemetry-v2'
@@ -119,9 +121,9 @@ export class EditProvider {
             const stream = this.config.chat.chat(
                 messages,
                 {
-                    model,
+                    model: vscode.workspace.getConfiguration().get('jody.chat.model'),
                     stopSequences,
-                    maxTokensToSample: contextWindow.output,
+                    maxTokensToSample: vscode.workspace.getConfiguration().get('jody.chat.max_tokens'),
                 },
                 this.abortController.signal
             )
@@ -163,6 +165,7 @@ export class EditProvider {
                     }
                 }
             }
+            this.config.authProvider.logAction('edit')
         })
     }
 

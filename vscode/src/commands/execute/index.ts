@@ -1,3 +1,4 @@
+import * as vscode from 'vscode'
 import {
     type ContextItem,
     DefaultChatCommands,
@@ -11,10 +12,13 @@ import { executeDocCommand } from './doc'
 import { executeExplainCommand } from './explain'
 import { executeSmellCommand } from './smell'
 import { executeTestChatCommand } from './test-chat'
+import { commands } from './cody.json'
+import { commands_zh } from './cody_zh.json'
 import { executeTestEditCommand } from './test-edit'
+const isChinese = vscode.workspace.getConfiguration().get('jody.chat.language') == 'Chinese'
+const defaultCommands = isChinese ? commands_zh : commands
 
-export { commands as defaultCommands } from './cody.json'
-
+export { defaultCommands }
 export { executeSmellCommand } from './smell'
 export { executeExplainCommand } from './explain'
 export { executeTestChatCommand } from './test-chat'

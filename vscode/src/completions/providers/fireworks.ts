@@ -1,3 +1,6 @@
+// @ts-nocheck
+import * as vscode from 'vscode'
+
 import {
     type AuthStatus,
     type AutocompleteContextSnippet,
@@ -32,6 +35,7 @@ import { getSuffixAfterFirstNewline } from '../text-processing'
 import { forkSignal, generatorWithTimeout, zipGenerators } from '../utils'
 import * as fimPromptUtils from './fim-prompt-utils'
 import type { FIMModelSpecificPromptExtractor } from './fim-prompt-utils'
+import { getModelHelpers } from './fastChat-models'
 
 import { SpanStatusCode } from '@opentelemetry/api'
 import type { CompletionResponseWithMetaData } from '@sourcegraph/cody-shared/src/inferenceClient/misc'
@@ -312,15 +316,10 @@ class FireworksProvider extends Provider {
             // We want to remove the same line suffix from a completion request since both StarCoder and Llama
             // code can't handle this correctly.
             const suffixAfterFirstNewline = getSuffixAfterFirstNewline(suffix)
-            const nextPrompt = this.promptExtractor.getInfillingPrompt({
-                repoName: this.options.gitContext
-                    ? PromptString.fromAutocompleteGitContext(
-                          this.options.gitContext,
-                          this.options.document.uri
-                      ).repoName
-                    : undefined,
-                filename: PromptString.fromDisplayPath(this.options.document.uri),
-                intro: introString,
+
+            const modelHelpers = getModelHelpers(this.model)
+            const nextPrompt = modelHelpers.getPrompt({
+                context: introString,
                 prefix,
                 suffix: suffixAfterFirstNewline,
             })
@@ -370,7 +369,7 @@ class FireworksProvider extends Provider {
                 ? MODEL_MAP[useMultilineModel ? 'starcoder2-15b' : 'starcoder2-7b']
                 : this.model === 'starcoder-hybrid'
                   ? MODEL_MAP[useMultilineModel ? 'starcoder-16b' : 'starcoder-7b']
-                  : MODEL_MAP[this.model]
+                  : this.model
         const requestParams = {
             ...partialRequestParams,
             messages: [{ speaker: 'human', text: this.createPrompt(snippets) }],
@@ -410,9 +409,7 @@ class FireworksProvider extends Provider {
             const abortController = forkSignal(abortSignal)
 
             const completionResponseGenerator = generatorWithTimeout(
-                this.fastPathAccessToken
-                    ? this.createFastPathClient(requestParams, abortController)
-                    : this.createDefaultClient(requestParams, abortController),
+                this.createFastPathClient(requestParams, abortController),
                 requestParams.timeoutMs,
                 abortController
             )
@@ -490,9 +487,10 @@ class FireworksProvider extends Provider {
             ? 'http://localhost:9992'
             : 'https://cody-gateway.sourcegraph.com'
 
-        const url = this.fireworksConfig
-            ? this.fireworksConfig.url
-            : `${gatewayUrl}/v1/completions/fireworks`
+        // const url = `${gatewayUrl}/v1/completions/fireworks`
+        const url = `${vscode.workspace
+            .getConfiguration()
+            .get('jody.autocomplete.advanced.serverEndpoint')}v1/completions`
         const log = this.client.logger?.startCompletion(requestParams, url)
 
         // The async generator can not use arrow function syntax so we close over the context
@@ -517,9 +515,9 @@ class FireworksProvider extends Provider {
                 }
 
                 // Convert the SG instance messages array back to the original prompt
-                const prompt =
-                    await requestParams.messages[0]!.text!.toFilteredString(contextFiltersProvider)
+                const prompt = requestParams.messages[0]!.text!
 
+                const modelHelpers = getModelHelpers(self.model)
                 // c.f. https://readme.fireworks.ai/reference/createcompletion
                 const fireworksRequest = {
                     model:
@@ -529,12 +527,10 @@ class FireworksProvider extends Provider {
                     echo: false,
                     temperature:
                         self.fireworksConfig?.parameters?.temperature || requestParams.temperature,
-                    top_p: self.fireworksConfig?.parameters?.top_p || requestParams.topP,
-                    top_k: self.fireworksConfig?.parameters?.top_k || requestParams.topK,
                     stop: [
-                        ...(requestParams.stopSequences || []),
-                        ...(self.fireworksConfig?.parameters?.stop || []),
-                    ],
+                            ...(requestParams.stopSequences || []),
+                            ...(self.fireworksConfig?.parameters?.stop || []),
+                        ],
                     stream: true,
                     languageId: self.options.document.languageId,
                 }
@@ -549,6 +545,7 @@ class FireworksProvider extends Provider {
                 )
                 headers.set('Authorization', `Bearer ${self.fastPathAccessToken}`)
                 headers.set('X-Sourcegraph-Feature', 'code_completions')
+                process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
                 addTraceparent(headers)
 
                 logDebug('FireworksProvider', 'fetch', { verbose: { url, fireworksRequest } })
@@ -712,14 +709,7 @@ export function createProviderConfig({
 }: Omit<FireworksOptions, 'model' | 'maxContextTokens'> & {
     model: string | null
 }): ProviderConfig {
-    const clientModel =
-        model === null || model === ''
-            ? 'starcoder-hybrid'
-            : ['starcoder-hybrid', 'starcoder2-hybrid'].includes(model)
-              ? (model as FireworksModel)
-              : Object.prototype.hasOwnProperty.call(MODEL_MAP, model)
-                ? (model as keyof typeof MODEL_MAP)
-                : null
+    const clientModel: any = model
 
     if (clientModel === null) {
         throw new Error(`Unknown model: \`${model}\``)
@@ -765,13 +755,7 @@ function isFinetunedV1ModelFamily(model: string): boolean {
 }
 
 function isDeepSeekModelFamily(model: string): boolean {
-    return [
-        DEEPSEEK_CODER_1P3_B,
-        DEEPSEEK_CODER_7B,
-        DEEPSEEK_CODER_V2_LITE_BASE,
-        FIREWORKS_DEEPSEEK_7B_LANG_STACK_FINETUNED,
-        FIREWORKS_DEEPSEEK_7B_LANG_LOG_FINETUNED,
-    ].includes(model)
+    return model.startsWith('deepseek')
 }
 
 function isCodeQwenFamily(model: string): boolean {

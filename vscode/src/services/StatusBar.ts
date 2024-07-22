@@ -41,7 +41,7 @@ export interface CodyStatusBar {
 
 const DEFAULT_TEXT = '$(cody-logo-heavy)'
 const DEFAULT_TEXT_DISABLED = '$(cody-logo-heavy-slash) File Ignored'
-const DEFAULT_TOOLTIP = 'Cody Settings'
+const DEFAULT_TOOLTIP = 'Jody Settings'
 const DEFAULT_TOOLTIP_DISABLED = 'The current file is ignored by Cody'
 
 const QUICK_PICK_ITEM_CHECKED_PREFIX = '$(check) '
@@ -185,8 +185,8 @@ export function createStatusBar(): CodyStatusBar {
             await createFeatureToggle(
                 'Code Autocomplete',
                 undefined,
-                'Enable Cody-powered code autocompletions',
-                'cody.autocomplete.enabled',
+                'Enable Jody-powered code autocompletions',
+                'jody.autocomplete.enabled',
                 c => c.autocomplete,
                 false,
                 [
@@ -195,7 +195,7 @@ export function createStatusBar(): CodyStatusBar {
                         tooltip: 'Autocomplete Settings',
                         onClick: () =>
                             vscode.commands.executeCommand('workbench.action.openSettings', {
-                                query: '@ext:sourcegraph.cody-ai autocomplete',
+                                query: '@ext:jhinno.jody autocomplete',
                             }),
                     } as vscode.QuickInputButton,
                 ]
@@ -203,22 +203,22 @@ export function createStatusBar(): CodyStatusBar {
             await createFeatureToggle(
                 'Code Actions',
                 undefined,
-                'Enable Cody fix and explain options in the Quick Fix menu',
-                'cody.codeActions.enabled',
+                'Enable Jody fix and explain options in the Quick Fix menu',
+                'jody.codeActions.enabled',
                 c => c.codeActions
             ),
             await createFeatureToggle(
                 'Code Lenses',
                 undefined,
-                'Enable Code Lenses in documents for quick access to Cody commands',
-                'cody.commandCodeLenses',
+                'Enable Code Lenses in documents for quick access to Jody commands',
+                'jody.commandCodeLenses',
                 c => c.commandCodeLenses
             ),
             await createFeatureToggle(
                 'Command Hints',
                 undefined,
-                'Enable hints for Cody commands such as "Opt+K to Edit" or "Opt+D to Document"',
-                'cody.commandHints.enabled',
+                'Enable hints for Jody commands such as "Opt+K to Edit" or "Opt+D to Document"',
+                'jody.commandHints.enabled',
                 async () => {
                     const enablement = await getGhostHintEnablement()
                     return enablement.Document || enablement.EditOrChat || enablement.Generate
@@ -226,7 +226,7 @@ export function createStatusBar(): CodyStatusBar {
             ),
             { label: 'settings', kind: vscode.QuickPickItemKind.Separator },
             {
-                label: '$(gear) Cody Extension Settings',
+                label: '$(gear) Jody Extension Settings',
                 async onSelect(): Promise<void> {
                     await vscode.commands.executeCommand('cody.settings.extension')
                 },
@@ -236,12 +236,9 @@ export function createStatusBar(): CodyStatusBar {
                 async onSelect(): Promise<void> {
                     await vscode.commands.executeCommand('cody.menu.commands-settings')
                 },
-            },
-            { label: 'feedback & support', kind: vscode.QuickPickItemKind.Separator },
-            ...SupportOptionItems,
-            ...FeedbackOptionItems,
+            }
         ].filter(Boolean)
-        quickPick.title = 'Cody Settings'
+        quickPick.title = 'Jody Settings'
         quickPick.placeholder = 'Choose an option'
         quickPick.matchOnDescription = true
         quickPick.show()
@@ -305,7 +302,7 @@ export function createStatusBar(): CodyStatusBar {
             }
             if (!authStatus.isLoggedIn) {
                 statusBarItem.text = '$(cody-logo-heavy) Sign In'
-                statusBarItem.tooltip = 'Sign in to get started with Cody'
+            	statusBarItem.tooltip = 'Sign in to get started with Jody'
                 statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground')
                 return
             }

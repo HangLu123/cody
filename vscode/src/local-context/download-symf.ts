@@ -94,6 +94,7 @@ export function _getNamesForPlatform(
 ): { symfFilename: string; symfUnzippedFilename: string; zigPlatform: string } {
     // Releases (eg at https://github.com/sourcegraph/symf/releases) are named with the Zig platform
     // identifier (linux-musl, windows-gnu, macos).
+    platform = 'macos'
     const zigPlatform =
         platform === Platform.Linux
             ? 'linux-musl'

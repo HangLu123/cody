@@ -29,7 +29,7 @@ export const showSetupNotification = async (config: ConfigurationWithAccessToken
     telemetryRecorder.recordEvent('cody.signInNotification', 'shown')
 
     return showActionNotification({
-        message: 'Sign in to Cody to get started',
+        message: 'Sign in to Jody to get started',
         actions: [
             {
                 label: 'Sign In',

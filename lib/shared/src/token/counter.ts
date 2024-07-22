@@ -113,7 +113,11 @@ export class TokenCounter {
                 if (!this.usedTokens.input) {
                     throw new Error('Chat token usage must be updated before Context.')
                 }
-                return this.remainingTokens.enhanced >= count
+                if(this.maxContextTokens.enhanced >= count){
+                    this.maxContextTokens.enhanced -= count
+                    return true
+                }
+                return false
             default:
                 return false
         }

@@ -88,7 +88,7 @@ export const WelcomeMessage: FunctionComponent<{
                 </FeatureRow>
                 <FeatureRow icon={TextIcon}>
                     To add code context from an editor, or the file explorer, right click and use{' '}
-                    <MenuExample>Add to Cody Chat</MenuExample>
+                    <MenuExample>Add to Jody Chat</MenuExample>
                 </FeatureRow>
                 <FeatureRow icon={NewChatIcon}>
                     Start a new chat using <Kbd macOS="opt+/" linuxAndWindows="alt+/" /> or the{' '}
@@ -96,8 +96,7 @@ export const WelcomeMessage: FunctionComponent<{
                 </FeatureRow>
                 <FeatureRow icon={SettingsIcon}>
                     Customize chat settings with the{' '}
-                    <i className="codicon codicon-settings-gear tw-translate-y-[3px] tw-mx-1" /> button,
-                    or see the <a href="https://sourcegraph.com/docs/cody">documentation</a>
+                    <i className="codicon codicon-settings-gear tw-translate-y-[3px] tw-mx-1" /> button
                 </FeatureRow>
             </div>
         </div>

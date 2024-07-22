@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import styles from './App.module.css'
@@ -244,13 +245,7 @@ export const App: React.FunctionComponent<{ vscodeAPI: VSCodeWrapper }> = ({ vsc
 
     return (
         <div className={styles.outerContainer}>
-            {userHistory && (
-                <Notices
-                    probablyNewInstall={isNewInstall}
-                    IDE={config.agentIDE}
-                    version={config.agentExtensionVersion}
-                />
-            )}
+
             {errorMessages && <ErrorBanner errors={errorMessages} setErrors={setErrorMessages} />}
             {view === 'chat' && userHistory && (
                 <ChatModelContextProvider value={chatModelContext}>
