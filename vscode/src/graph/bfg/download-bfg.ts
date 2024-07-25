@@ -26,6 +26,7 @@ export async function getBfgPath(context: vscode.ExtensionContext): Promise<stri
     // TODO: maybe we do want an option to download bfg if it's not found?
     const config = vscode.workspace.getConfiguration()
     const userBfgPath = config.get<string>('cody.experimental.cody-engine.path')
+    return ''
     if (userBfgPath) {
         if (!(await fileExists(userBfgPath))) {
             throw new Error(`bfg can't be loaded from user provided path: ${userBfgPath}`)

@@ -12,6 +12,7 @@ import {
 import type { SimpleChatModel } from '../chat/chat-view/SimpleChatModel'
 import { logDebug, logError } from '../log'
 import { PromptBuilder } from '../prompt-builder'
+import { getConfiguration } from '../configuration'
 
 /**
  * Rewrite the query based on the conversation history and mentioned context items.
@@ -86,7 +87,7 @@ Rewrite the following latest query based on the chat history: <latest_query>${qu
         const messages = promptBuilder.build()
 
         const stream = chatClient.chat(messages, {
-            model: vscode.workspace.getConfiguration().get('jody.chat.model'),
+            model: getConfiguration().chatModel,
             maxTokensToSample: 400,
             temperature: 0,
             topK: 1,

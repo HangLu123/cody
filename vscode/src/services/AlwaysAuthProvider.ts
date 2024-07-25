@@ -7,6 +7,7 @@ import { newAuthStatus } from '../chat/utils'
 import { localStorage } from './LocalStorageProvider'
 import { secretStorage } from './SecretStorageProvider'
 import { AuthProvider } from './AuthProvider'
+import { getConfiguration } from '../configuration'
 type AuthConfig = Pick<ConfigurationWithAccessToken, 'serverEndpoint' | 'accessToken' | 'customHeaders'>
 
 export class AlwaysAuthProvider extends AuthProvider {
@@ -63,10 +64,6 @@ export class AlwaysAuthProvider extends AuthProvider {
     ): Promise<AuthStatus> {
         const endpoint = config.serverEndpoint
         process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
-        const serverEndpoint =
-            vscode.workspace.getConfiguration().get('jody.autocomplete.advanced.serverEndpoint') ||
-            vscode.workspace.getConfiguration().get('cody.chat.advanced.serverEndpoint')
-        const jhServer = vscode.workspace.getConfiguration().get('jody.jhServer')
         return newAuthStatus(
             endpoint,
             config.always,
@@ -145,14 +142,12 @@ export class AlwaysAuthProvider extends AuthProvider {
 
     public async logAction(action: string): Promise<void> {
         try {
-            const serverEndpoint:any =
-            vscode.workspace.getConfiguration().get('jody.chat.serverEndpoint')||vscode.workspace.getConfiguration().get('jody.autocomplete.advanced.serverEndpoint')
-
-            const jhServer = vscode.workspace.getConfiguration().get('jody.jhServer')
-            const baseUrl = jhServer ||  `${serverEndpoint.split(':')[0]}:${serverEndpoint.split(':')[1].split(':')[0]}`
+            const jhServer = getConfiguration().jhServer;
+            const formatUrl = url => `${url.trim().replace(/\/?$/, '')}/`;
+            const url = formatUrl(jhServer);
             const token = localStorage.get('jhai-token')
             const response: any = await fetch(
-                `${baseUrl}jhai/jody/?token=${token}`,
+                `${url}jhai/jody/?token=${token}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },

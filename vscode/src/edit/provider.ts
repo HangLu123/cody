@@ -29,6 +29,7 @@ import { responseTransformer } from './output/response-transformer'
 import { buildInteraction } from './prompt'
 import { PROMPT_TOPICS } from './prompt/constants'
 import { isStreamedIntent } from './utils/edit-intent'
+import { getConfiguration } from '../configuration'
 
 interface EditProviderOptions extends EditManagerOptions {
     task: FixupTask
@@ -121,7 +122,7 @@ export class EditProvider {
             const stream = this.config.chat.chat(
                 messages,
                 {
-                    model: vscode.workspace.getConfiguration().get('jody.chat.model'),
+                    model: getConfiguration().chatModel,
                     stopSequences,
                     maxTokensToSample: vscode.workspace.getConfiguration().get('jody.chat.max_tokens'),
                 },

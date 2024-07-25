@@ -175,6 +175,7 @@ export class SimpleChatPanelProvider
     private readonly repoPicker: RemoteRepoPicker | null
     private readonly startTokenReceiver: typeof startTokenReceiver | undefined
     private readonly featureFlagProvider: FeatureFlagProvider
+    private isRequestInProgress = false;
 
     private contextFilesQueryCancellation?: vscode.CancellationTokenSource
     private allMentionProvidersMetadataQueryCancellation?: vscode.CancellationTokenSource
@@ -288,20 +289,38 @@ export class SimpleChatPanelProvider
         switch (message.command) {
             case 'login':
                 process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
+                if (this.isRequestInProgress) {
+                    void vscode.window.showInformationMessage('请求正在处理中，请稍候...');
+                    return;
+                }
                 try {
-                    const serverEndpoint:any =
-                    vscode.workspace.getConfiguration().get('jody.chat.serverEndpoint')||vscode.workspace.getConfiguration().get('jody.autocomplete.advanced.serverEndpoint')
-                    const jhServer = vscode.workspace.getConfiguration().get('jody.jhServer')
-                    if (serverEndpoint?.includes('dockerService') || jhServer) {
-                        const baseUrl = jhServer ||  `${serverEndpoint.split(':')[0]}:${serverEndpoint.split(':')[1].split(':')[0]}`
+                    this.isRequestInProgress = true;
+                    const jhServer = getConfiguration().jhServer
+                    if (!jhServer) {
+                        void vscode.window.showErrorMessage('门户地址配置错误。请点击"插件配置"。修改"Jody:JH Server", 重载后尝试登录。');
+                        vscode.commands.executeCommand('cody.settings.extension');
+                        return;
+                    }
+                    //如果账号密码为空，提示
+                    if (!message.userName || !message.password) {
+                        void vscode.window.showErrorMessage('登录账号或密码不能为空。');
+                        return;
+                    }
+                    if (jhServer) {
+                        const formatUrl = url => `${url.trim().replace(/\/?$/, '')}/`;
+                        const url = formatUrl(jhServer);
+                        console.log(url)
+                        const controller = new AbortController();
+                        const timeoutId = setTimeout(() => controller.abort(), 5000);  // 5 seconds timeout
                         const response: any = await fetch(
-                            `${baseUrl}jhai/jody/token?name=${message.userName}&pwd=${message.password}`,
+                            `${url}jhai/jody/token?name=${message.userName}&pwd=${message.password}`,
                             {
                                 method: 'GET',
                                 headers: { 'Content-Type': 'application/json' },
+                                signal: controller.signal
                             }
                         );
-
+                        clearTimeout(timeoutId);
                         // 检查响应状态码
                         if (!response.ok) {
                             throw new Error(`HTTP error! status: ${response.status}`);
@@ -309,7 +328,6 @@ export class SimpleChatPanelProvider
 
                         // 解析返回的 JSON 数据
                         const data = await response.json();
-
                         if (!data.isSuccess) {
                             void vscode.window.showErrorMessage(
                                 data.messages.error[0]
@@ -324,31 +342,31 @@ export class SimpleChatPanelProvider
                         }
                     }else{
                         void vscode.window.showErrorMessage(
-                            '请先按照文档完成插件配置'
-                        )
+                            '登录失败，请检查网络连接或JH Server配置。'
+                        );
                         vscode.commands.executeCommand('cody.settings.extension')
                     }
                 } catch (error) {
                     console.error('Fetch error:', error);
                     // 在这里处理 fetch 错误
                     void vscode.window.showErrorMessage(
-                        '请先按照文档完成插件配置'
-                    )
+                        '登录失败，请检查网络连接或JH Server配置。'
+                    );
                     vscode.commands.executeCommand('cody.settings.extension')
+                } finally {
+                    this.isRequestInProgress = false;
                 }
                 break
             case 'apply':
-                const serverEndpoint:any =
-                    vscode.workspace.getConfiguration().get('jody.autocomplete.advanced.serverEndpoint') ||
-                    vscode.workspace.getConfiguration().get('cody.chat.advanced.serverEndpoint')
-                const jhServer = vscode.workspace.getConfiguration().get('jody.jhServer')
-                if (serverEndpoint?.includes('dockerService') || jhServer) {
-                    const baseUrl = jhServer ||  `${serverEndpoint.split(':')[0]}:${serverEndpoint.split(':')[1].split(':')[0]}`
-                    vscode.env.openExternal(vscode.Uri.parse(baseUrl));
+                const jhServer = getConfiguration().jhServer
+                if (jhServer) {
+                    const formatUrl = url => `${url.trim().replace(/\/?$/, '')}/`;
+                    const url = formatUrl(jhServer);
+                    vscode.env.openExternal(vscode.Uri.parse(url));
                 }else{
                     void vscode.window.showErrorMessage(
-                        '请先配置服务地址'
-                    )
+                        '访问失败，请检查JH Server配置。'
+                    );
                 }
 
                 break
@@ -1187,8 +1205,8 @@ export class SimpleChatPanelProvider
             authStatus.isDotCom && !authStatus.userCanUpgrade,
             this.chatModel.modelID
         )[0]
-        model.title = vscode.workspace.getConfiguration().get('jody.chat.model')
-        model.model = vscode.workspace.getConfiguration().get('jody.chat.model')
+        model.title = getConfiguration().chatModel
+        model.model = getConfiguration().chatModel
 
         void this.postMessage({
             type: 'chatModels',
@@ -1390,7 +1408,7 @@ export class SimpleChatPanelProvider
             const stream = this.chatClient.chat(
                 prompt,
                 {
-                    model: vscode.workspace.getConfiguration().get('jody.chat.model'),
+                    model: getConfiguration().chatModel,
                     maxTokensToSample: vscode.workspace.getConfiguration().get('jody.chat.max_tokens'),
                 },
                 abortSignal

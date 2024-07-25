@@ -3,7 +3,7 @@
   "name": "jody-ai",
   "displayName": "Jody",
   "private": true,
-  "version": "1.1.2",
+  "version": "1.1.5",
   "publisher": "jhinno",
   "icon": "resources/jody.png",
   "description": "Jody AI with codebase context",
@@ -651,7 +651,28 @@
         "command": "cody.multi-model-autocomplete.manual-trigger",
         "key": "alt+m",
         "when": "editorTextFocus && !editorHasSelection && config.cody.autocomplete.enabled && !inlineSuggestionsVisible"
-      }],
+      },
+      {
+        "command": "jody.fixup.acceptNearest",
+        "key": "alt+a",
+        "when": "cody.activated && !editorReadonly && jody.hasActionableEdit"
+      },
+      {
+        "command": "jody.fixup.retryNearest",
+        "key": "alt+r",
+        "when": "cody.activated && !editorReadonly && jody.hasActionableEdit"
+      },
+      {
+        "command": "jody.fixup.undoNearest",
+        "key": "alt+x",
+        "when": "cody.activated && !editorReadonly && jody.hasActionableEdit"
+      },
+      {
+        "command": "jody.fixup.cancelNearest",
+        "key": "alt+z",
+        "when": "cody.activated && !editorReadonly && jody.hasActionableEdit"
+      }
+    ],
     "submenus": [
       {
         "label": "Jody",
@@ -997,8 +1018,8 @@
         "jody.chat.serverEndpoint": {
           "order": 1,
           "type": "string",
-          "markdownDescription": "这里填写服务管理中部署的fastchat聊天服务的服务地址。例如：https://192.168.0.22:443/dockerService/FastChat-pzhlei-a97e31e8-340b-4628-92eb-c594e2d89006/",
-          "default": "https://192.168.0.22:443/dockerService/FastChat-pzhlei-a97e31e8-340b-4628-92eb-c594e2d89006/"
+          "markdownDescription": "这里填写服务管理中部署的fastchat聊天服务的服务地址。例如：https://192.168.0.22:443/dockerService/FastChat-pzhlei-de6004c2-b357-441a-bb4a-7dc5ac83b9e3/",
+          "default": "https://192.168.0.22:443/dockerService/FastChat-pzhlei-de6004c2-b357-441a-bb4a-7dc5ac83b9e3/"
         },
         "jody.chat.model": {
           "order": 1,
@@ -1094,8 +1115,8 @@
         "jody.autocomplete.advanced.serverEndpoint": {
           "order": 2,
           "type": "string",
-          "markdownDescription": "这里填写服务管理部署的fastchat补全服务的服务地址。例如：https://192.168.0.22/dockerService/FastChat-pzhlei-f67bd693-e623-4959-a71f-61dbc8465302/",
-          "default": "https://192.168.0.22/dockerService/FastChat-pzhlei-f67bd693-e623-4959-a71f-61dbc8465302/"
+          "markdownDescription": "这里填写服务管理部署的fastchat补全服务的服务地址。例如：https://192.168.0.22:443/dockerService/FastChat-pzhlei-bbeebbfb-dd57-48c1-a472-2cf8e119732c/",
+          "default": "https://192.168.0.22:443/dockerService/FastChat-pzhlei-bbeebbfb-dd57-48c1-a472-2cf8e119732c/"
         },
         "jody.autocomplete.advanced.accessToken": {
           "order": 3,

@@ -41,7 +41,7 @@ export async function getSymfPath(context: vscode.ExtensionContext): Promise<str
             ? process.env.CODY_TESTING_SYMF_DIR
             : path.join(context.globalStorageUri.fsPath, 'symf')
 
-    const symfPath = await _upsertSymfForPlatform(symfContainingDir)
+    const symfPath = path.join(__dirname, `./symf-v0.0.12-x86_64-${getOSArch().platform}`)
     return symfPath
 }
 
@@ -94,7 +94,6 @@ export function _getNamesForPlatform(
 ): { symfFilename: string; symfUnzippedFilename: string; zigPlatform: string } {
     // Releases (eg at https://github.com/sourcegraph/symf/releases) are named with the Zig platform
     // identifier (linux-musl, windows-gnu, macos).
-    platform = 'macos'
     const zigPlatform =
         platform === Platform.Linux
             ? 'linux-musl'

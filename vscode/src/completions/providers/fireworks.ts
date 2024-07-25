@@ -41,6 +41,7 @@ import { SpanStatusCode } from '@opentelemetry/api'
 import type { CompletionResponseWithMetaData } from '@sourcegraph/cody-shared/src/inferenceClient/misc'
 import { logDebug } from '../../log'
 import { createRateLimitErrorFromResponse } from '../client'
+import { getConfiguration } from '../../configuration'
 import { TriggerKind } from '../get-inline-completions'
 import {
     type FetchCompletionResult,
@@ -488,9 +489,9 @@ class FireworksProvider extends Provider {
             : 'https://cody-gateway.sourcegraph.com'
 
         // const url = `${gatewayUrl}/v1/completions/fireworks`
-        const url = `${vscode.workspace
-            .getConfiguration()
-            .get('jody.autocomplete.advanced.serverEndpoint')}v1/completions`
+        let url = getConfiguration().autocompleteAdvancedServerEndpoint
+        const formatUrl = url => `${url.trim().replace(/\/?$/, '')}/`;
+        url = `${formatUrl(url)}v1/completions`;
         const log = this.client.logger?.startCompletion(requestParams, url)
 
         // The async generator can not use arrow function syntax so we close over the context
@@ -521,7 +522,7 @@ class FireworksProvider extends Provider {
                 // c.f. https://readme.fireworks.ai/reference/createcompletion
                 const fireworksRequest = {
                     model:
-                        self.fireworksConfig?.model || requestParams.model?.replace(/^fireworks\//, ''),
+                        getConfiguration().autocompleteAdvancedModel,
                     prompt,
                     max_tokens: requestParams.maxTokensToSample,
                     echo: false,

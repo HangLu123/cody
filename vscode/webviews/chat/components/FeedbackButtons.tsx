@@ -72,13 +72,6 @@ export const FeedbackButtons: React.FunctionComponent<FeedbackButtonsProps> = ({
                         <i className="codicon codicon-thumbsdown" />
                         <i className="codicon codicon-check" />
                     </VSCodeButton>
-                    <VSCodeLink
-                        href={String(CODY_FEEDBACK_URL)}
-                        target="_blank"
-                        title="Help improve Cody by providing more feedback about the quality of this response"
-                    >
-                        Give Feedback
-                    </VSCodeLink>
                 </span>
             )}
         </div>

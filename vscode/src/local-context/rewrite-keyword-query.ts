@@ -10,6 +10,7 @@ import {
 import { logDebug } from '../log'
 
 import { francAll } from 'franc-min'
+import { getConfiguration } from '../configuration'
 
 const containsMultipleSentences = /[.!?][\s\r\n]+\w/
 
@@ -51,7 +52,7 @@ async function doRewrite(
     completionsClient: SourcegraphCompletionsClient,
     query: PromptString
 ): Promise<string[]> {
-    const model = vscode.workspace.getConfiguration().get('jody.chat.model')
+    const model = getConfiguration().chatModel
     const stream = completionsClient.stream(
         {
             model,

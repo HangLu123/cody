@@ -24,6 +24,7 @@ import {
     toPartialUtf8String,
     tracer,
 } from '@sourcegraph/cody-shared'
+import { getConfiguration } from '../configuration'
 
 const isTemperatureZero = process.env.CODY_TEMPERATURE_ZERO === 'true'
 
@@ -63,7 +64,9 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
             const serializedParams = params
 
             const log = this.logger?.startCompletion(params, url.toString())
-            const chatUrl = `${vscode.workspace.getConfiguration().get('jody.chat.serverEndpoint')}v1/chat/completions`;
+            let chatUrl = getConfiguration().chatServerEndpoint;
+            const formatUrl = url => `${url.trim().replace(/\/?$/, '')}/`;
+            chatUrl = formatUrl(chatUrl);
             const requestFn = chatUrl.startsWith('https://')
                 ? https.request
                 : http.request
@@ -85,11 +88,9 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
             process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
             // Text which has not been decoded as a server-sent event (SSE)
             let bufferText = ''
-            const accessToken = vscode.workspace
-                .getConfiguration()
-                .get('jody.autocomplete.advanced.accessToken')
+            const accessToken = getConfiguration().autocompleteAdvancedAccessToken;
             const request = requestFn(
-                chatUrl,
+                `${chatUrl}v1/chat/completions`,
                 {
                     method: 'POST',
                     headers: {
