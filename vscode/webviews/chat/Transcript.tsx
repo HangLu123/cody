@@ -61,7 +61,7 @@ export const Transcript: React.FunctionComponent<{
                         i === interactions.length - 2 && interaction.assistantMessage !== null
                     }
                     priorAssistantMessageIsLoading={Boolean(
-                        messageInProgress && interactions.at(i - 1)?.assistantMessage?.isLoading
+                        messageInProgress
                     )}
                 />
             ))}

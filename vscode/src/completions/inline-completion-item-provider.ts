@@ -439,6 +439,8 @@ export class InlineCompletionItemProvider
                     return null
                 }
 
+                this.config.statusBar.deleteError('AutoCompleteDisabledByErrorConfig')
+
                 // Since we now know that the completion is going to be visible in the UI, we save the
                 // completion as the last candidate (that is shown as ghost text in the editor) so that
                 // we can reuse it if the user types in such a way that it is still valid (such as by
@@ -715,6 +717,28 @@ export class InlineCompletionItemProvider
                 description: 'Contact your Sourcegraph site admin to enable autocomplete',
                 errorType: 'AutoCompleteDisabledByAdmin',
                 removeAfterSelected: false,
+                onShow: () => {
+                    if (shown) {
+                        return
+                    }
+                    shown = true
+                },
+            })
+        } else {
+            const errorTitle = '补全服务或补全模型配置不正确，补全功能不可用。'
+            // If there's already an existing error, don't add another one.
+            const hasAutocompleteDisabledConfig = this.config.statusBar.hasError(
+                'AutoCompleteDisabledByErrorConfig'
+            )
+            if (hasAutocompleteDisabledConfig) {
+                return
+            }
+            let shown = false
+            this.config.statusBar.addError({
+                title: errorTitle,
+                description: '补全服务或补全模型配置不正确，补全功能不可用。',
+                errorType: 'AutoCompleteDisabledByErrorConfig',
+                removeAfterSelected: true,
                 onShow: () => {
                     if (shown) {
                         return

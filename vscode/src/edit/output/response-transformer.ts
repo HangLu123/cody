@@ -15,6 +15,13 @@ const PROMPT_TOPIC_REGEX = new RegExp(
         .replace(/\d+/g, '\\d+'),
     'g'
 )
+const NEW_REG = new RegExp(
+    Object.values(PROMPT_TOPICS)
+        .map(topic => `<\/?${topic}`)
+        .join('|')
+        .replace(/\d+/g, '\\d+'),
+    'g'
+)
 
 /**
  * Regular expressions to identify markdown code blocks, and then strip the start and end delimiters.
@@ -42,6 +49,7 @@ export function responseTransformer(
     const strippedText = text
         // Strip specific XML tags referenced in the prompt, e.g. <CODE511>
         .replaceAll(PROMPT_TOPIC_REGEX, '')
+        .replaceAll(NEW_REG, '')
         // Strip Markdown syntax for code blocks, e.g. ```typescript.
         .replaceAll(MARKDOWN_CODE_BLOCK_REGEX, block =>
             block.replace(MARKDOWN_CODE_BLOCK_START, '').replace(MARKDOWN_CODE_BLOCK_END, '')

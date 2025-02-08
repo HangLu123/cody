@@ -67,7 +67,7 @@ export class AlwaysAuthProvider extends AuthProvider {
         return newAuthStatus(
             endpoint,
             config.always,
-            localStorage.get('jhai-user')||undefined,
+            process.env.JH_USER || localStorage.get('jhai-user')||'hlu',
             config.always,
             config.always,
             /* userCanUpgrade: */ config.always,
@@ -103,7 +103,7 @@ export class AlwaysAuthProvider extends AuthProvider {
             serverEndpoint: endpoint,
             accessToken: token,
             customHeaders: customHeaders || this.config.customHeaders,
-            always: localStorage.get('jhai-token')||always
+            always: '554c151c4288e61d06f0e25bdb0816c647e6346acb675dcf2e0ff5ac51f737ddcfb67253e40ea1485bed802d42cda9b1147a2fcf924b4a7f4a814e499ca3bd41'
         }
         const authStatus = await this._makeAuthStatus(config)
         const isLoggedIn = authStatus.requiresVerifiedEmail
@@ -130,8 +130,6 @@ export class AlwaysAuthProvider extends AuthProvider {
             await localStorage.deleteEndpoint()
             try{this.logAction('log out')}catch{}
             await localStorage.delete('jhai-token')
-            // await this.auth(endpoint, vscode.workspace.getConfiguration().get('jody.autocomplete.advanced.accessToken') ||
-            // 'mock-fake-token', '', false)
             vscode.commands.executeCommand('workbench.action.reloadWindow');
             this.authStatus.endpoint = ''
             await vscode.commands.executeCommand('setContext', 'cody.chatPanel', false)
@@ -144,16 +142,16 @@ export class AlwaysAuthProvider extends AuthProvider {
         try {
             const jhServer = getConfiguration().jhServer;
             const formatUrl = url => `${url.trim().replace(/\/?$/, '')}/`;
-            const url = formatUrl(jhServer);
-            const token = localStorage.get('jhai-token')
+            const url = process.env.PROXY_URL || jhServer;
+            const token = '554c151c4288e61d06f0e25bdb0816c647e6346acb675dcf2e0ff5ac51f737ddcfb67253e40ea1485bed802d42cda9b1147a2fcf924b4a7f4a814e499ca3bd41'
             const response: any = await fetch(
-                `${url}jhai/jody/?token=${token}`,
+                `${formatUrl(url)}jhai/jody/?token=${token}`,
                 {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         actionType: action,
-                        userName: localStorage.get('jhai-user'),
+                        userName: process.env.JH_USER || localStorage.get('jhai-user'),
                     })
                 }
             );
@@ -165,7 +163,6 @@ export class AlwaysAuthProvider extends AuthProvider {
 
             // 解析返回的 JSON 数据
             const data = await response.json();
-          console.log(data);
 
         } catch (error) {
             console.error('Fetch error:', error);

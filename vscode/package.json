@@ -3,7 +3,7 @@
   "name": "jody-ai",
   "displayName": "Jody",
   "private": true,
-  "version": "1.1.5",
+  "version": "1.1.32",
   "publisher": "jhinno",
   "icon": "resources/jody.png",
   "description": "Jody AI with codebase context",
@@ -35,7 +35,7 @@
     "release": "ts-node-transpile-only ./scripts/release.ts",
     "download-wasm": "ts-node-transpile-only ./scripts/download-wasm-modules.ts",
     "copy-win-ca-roots": "ts-node-transpile-only ./scripts/copy-win-ca-roots.ts",
-    "release:dry-run": "pnpm run download-wasm && CODY_RELEASE_DRY_RUN=1 ts-node ./scripts/release.ts",
+    "release:dry-run": "set CODY_RELEASE_DRY_RUN=1 && ts-node-transpile-only ./scripts/release.ts",
     "storybook": "storybook dev -p 6007 --no-open --no-version-updates",
     "test:e2e": "playwright install && tsc --build && node dist/tsc/test/e2e/install-deps.js && pnpm run -s build:dev:desktop && pnpm run -s test:e2e:run",
     "test:e2e:run": "playwright test",
@@ -83,8 +83,12 @@
     "kotlin",
     "ollama"
   ],
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
   "engines": {
-    "vscode": "^1.79.0"
+    "vscode": "^1.85.0"
   },
   "main": "./dist/extension.node.js",
   "browser": "./dist/extension.web.js",
@@ -96,6 +100,14 @@
         "title": "Getting Started with Jody",
         "description": "Discover how Jody can help you write, understand and fix code faster",
         "steps": [
+          {
+            "id": "login",
+            "title": "Login",
+            "description": "Configure the plugin, enter username, password, and log in",
+            "media": {
+              "markdown": "walkthroughs/login.md"
+            }
+          },
           {
             "id": "autocomplete",
             "title": "Code Autocomplete",
@@ -142,14 +154,6 @@
             "description": "Easily customize the default keyboard shortcuts to suit your workflow.\n[Show Keyboard Shortcuts Editor](command:cody.sidebar.keyboardShortcuts)",
             "media": {
               "markdown": "walkthroughs/keyboard.md"
-            }
-          },
-          {
-            "id": "ollama",
-            "title": "Ollama (Experimental)",
-            "description": "Learn how to use your local models with Jody.",
-            "media": {
-              "markdown": "walkthroughs/ollama.md"
             }
           }
         ]
@@ -653,24 +657,24 @@
         "when": "editorTextFocus && !editorHasSelection && config.cody.autocomplete.enabled && !inlineSuggestionsVisible"
       },
       {
-        "command": "jody.fixup.acceptNearest",
+        "command": "cody.fixup.acceptNearest",
         "key": "alt+a",
-        "when": "cody.activated && !editorReadonly && jody.hasActionableEdit"
+        "when": "cody.activated && !editorReadonly && cody.hasActionableEdit"
       },
       {
-        "command": "jody.fixup.retryNearest",
+        "command": "cody.fixup.retryNearest",
         "key": "alt+r",
-        "when": "cody.activated && !editorReadonly && jody.hasActionableEdit"
+        "when": "cody.activated && !editorReadonly && cody.hasActionableEdit"
       },
       {
-        "command": "jody.fixup.undoNearest",
+        "command": "cody.fixup.undoNearest",
         "key": "alt+x",
-        "when": "cody.activated && !editorReadonly && jody.hasActionableEdit"
+        "when": "cody.activated && !editorReadonly && cody.hasActionableEdit"
       },
       {
-        "command": "jody.fixup.cancelNearest",
+        "command": "cody.fixup.cancelNearest",
         "key": "alt+z",
-        "when": "cody.activated && !editorReadonly && jody.hasActionableEdit"
+        "when": "cody.activated && !editorReadonly && cody.hasActionableEdit"
       }
     ],
     "submenus": [
@@ -854,11 +858,6 @@
           "command": "cody.debug.outputChannel",
           "when": "view == cody.support.tree.view",
           "group": "8_cody@2"
-        },
-        {
-          "command": "cody.debug.reportIssue",
-          "when": "view == cody.support.tree.view",
-          "group": "9_cody@1"
         }
       ],
       "editor/title": [
@@ -948,66 +947,42 @@
       "title": "Jody",
       "properties": {
         "jody.jhServer": {
-          "order": 1,
+          "order": 0,
           "type": "string",
-          "markdownDescription": "用于登录的景行应用门户地址,例如：https://192.168.0.22/",
+          "markdownDescription": "请输入“已集成人工智能平台V6.2的景行应用门户”的网页地址，用于登录jody，例如：https://192.168.0.22/",
           "default": "https://192.168.0.22/",
           "examples": [
             "https://192.168.0.22/"
-          ]
+          ],
+          "pattern": "^(http|https):\\/\\/.*",
+          "errorMessage": "请输入有效的服务地址，地址必须以 'http://' 或 'https://' 开始。"
         },
-        "jody.useContext": {
+        "cody.useContext": {
           "order": 99,
           "type": "string",
-          "enum": ["embeddings", "keyword", "blended", "none"],
-          "default": "none",
-          "markdownDescription": "Controls which context providers jody uses for chat, commands and inline edits. Use 'blended' for best results. For debugging other context sources, 'embeddings' will use an embeddings-based index if available. 'keyword' will use a search-based index. 'none' will not use embeddings or search-based indexes."
+          "enum": ["keyword", "blended", "none"],
+          "default": "blended",
+          "markdownDescription": "Controls which context providers jody uses for chat, commands and inline edits. Use 'blended' for best results. For debugging other context sources, 'keyword' will use a search-based index. 'none' will not use embeddings or search-based indexes."
         },
-        "jody.customHeaders": {
-          "order": 4,
-          "type": "object",
-          "markdownDescription": "Adds custom HTTP headers to all network request. Defining required headers here ensures requests are properly forwarded through intermediary proxy servers, which may mandate certain custom headers for internal or external communication.",
-          "default": {},
-          "examples": [
-            {
-              "Cache-Control": "no-cache",
-              "Proxy-Authenticate": "Basic"
-            }
-          ]
-        },
-        "jody.autocomplete.enabled": {
+        "cody.autocomplete.enabled": {
           "order": 5,
           "type": "boolean",
           "markdownDescription": "Enables code autocompletions.",
           "default": true
         },
-        "jody.autocomplete.languages": {
-          "order": 5,
-          "type": "object",
-          "markdownDescription": "Enables or disables code autocompletions for specified [language ids](https://code.visualstudio.com/docs/languages/identifiers). `\"*\"` is the default fallback if no language-specific setting is found.\n\nThe default setting: \n\n```json\n{\n  \"*\": true\n}\n```\n\nTo disable autocomplete for a given [language id](https://code.visualstudio.com/docs/languages/identifiers#_known-language-identifiers) set its value to `false`, for example:\n\n```json\n{\n  \"*\": true,\n  \"plaintext\": false\n}\n```",
-          "default": {
-            "*": true
-          },
-          "examples": [
-            {
-              "*": true,
-              "plaintext": false
-            }
-          ]
-        },
-        "jody.commandCodeLenses": {
+        "cody.commandCodeLenses": {
           "order": 8,
           "type": "boolean",
           "markdownDescription": "Adds code lenses to current file for quick access to Jody commands.",
           "default": false
         },
-        "jody.chat.preInstruction": {
+        "cody.chat.preInstruction": {
           "order": 6,
           "type": "string",
           "markdownDescription": "A custom instruction to be included at the start of all chat messages (e.g. \"Answer all my questions in Spanish.\")",
           "examples": ["Answer all my questions in Spanish."]
         },
-        "jody.edit.preInstruction": {
+        "cody.edit.preInstruction": {
           "order": 7,
           "type": "string",
           "markdownDescription": "A custom instruction to be included at the end of all instructions for edit commands (e.g. \"Write all unit tests with Jest instead of detected framework.\")",
@@ -1018,249 +993,122 @@
         "jody.chat.serverEndpoint": {
           "order": 1,
           "type": "string",
-          "markdownDescription": "这里填写服务管理中部署的fastchat聊天服务的服务地址。例如：https://192.168.0.22:443/dockerService/FastChat-pzhlei-de6004c2-b357-441a-bb4a-7dc5ac83b9e3/",
-          "default": "https://192.168.0.22:443/dockerService/FastChat-pzhlei-de6004c2-b357-441a-bb4a-7dc5ac83b9e3/"
+          "markdownDescription": "问答服务的地址。例如：https://192.168.0.22/dockerService/vllm-pzhlei-e8fac41f-c596-4a9d-9798-910712404819/",
+          "default": "https://192.168.0.22/dockerService/vllm-pzhlei-e8fac41f-c596-4a9d-9798-910712404819/",
+          "pattern": "^(http|https):\\/\\/.*",
+          "errorMessage": "请输入有效的问答服务地址，地址必须以 'http://' 或 'https://' 开始。"
+        },
+        "jody.chat.accessToken": {
+          "order": 2,
+          "type": "string",
+          "markdownDescription": "The access token used for chat."
         },
         "jody.chat.model": {
           "order": 1,
           "type": "string",
-          "default": "deepseek-coder",
-          "markdownDescription": "Choose chat model"
+          "default": "Qwen2-72B-Instruct-AWQ",
+          "markdownDescription": "问答服务的模型。例如：Qwen2-72B-Instruct-AWQ",
+          "pattern": "^.+$",
+          "errorMessage": "问答模型不能为空，请输入一个有效的模型名称。"
         },
-        "jody.chat.max_tokens": {
-          "order": 3,
-          "type": "string",
-          "default": "1000",
+        "jody.chat.maxTokens": {
+          "order": 4,
+          "type": "integer",
+          "minimum": 1,
+          "default": 1000,
           "markdownDescription": "The maximum number of tokens that can be generated in the chat completion. The total length of input tokens and generated tokens is limited by the model's context length."
         },
         "jody.chat.temperature": {
-          "order": 3,
+          "order": 4,
           "type": "string",
           "default": "0.2",
+          "pattern": "^(0(\\.\\d+)?|1(\\.\\d+)?|2(\\.0+)?)$",
+          "errorMessage": "Temperature must be a floating point number between 0 and 2 inclusive.",
           "markdownDescription": "What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic."
         },
         "jody.chat.language": {
-          "order": 3,
+          "order": 4,
           "type": "string",
-          "default": "Chinese",
+          "default": "English",
           "enum": [
-            "Chinese",
-            "English"
+            "English",
+            "Chinese"
           ],
-          "markdownDescription": "Choose chat language"
+          "markdownDescription": "选择问答语言。例如：选择English，即为英文回答。英文效果最佳，建议使用英文。"
         },
-        "jody.codeActions.enabled": {
+        "cody.codeActions.enabled": {
           "order": 11,
           "title": "Jody Code Actions",
           "type": "boolean",
           "markdownDescription": "Add Jody options to Quick Fix menus for fixing, explaining, documenting, and editing code.",
           "default": true
         },
-        "jody.commandHints.enabled": {
+        "cody.commandHints.enabled": {
           "order": 12,
           "title": "Jody Command Hints",
           "type": "boolean",
           "markdownDescription": "Enable hints for Jody commands such as \"Opt+K to Edit\" or \"Opt+D to Document\"",
           "default": true
         },
-        "jody.experimental.tracing": {
-          "order": 99,
-          "type": "boolean",
-          "markdownDescription": "Enable OpenTelemetry tracing",
-          "default": false
-        },
-        "jody.experimental.commitMessage": {
+        "cody.experimental.commitMessage": {
           "order": 99,
           "type": "boolean",
           "markdownDescription": "Enable commit message generation",
-          "default": false
+          "default": true
         },
-        "jody.experimental.minion.anthropicKey": {
-          "order": 99,
-          "type": "string",
-          "default": ""
-        },
-        "jody.debug.verbose": {
+        "cody.debug.verbose": {
           "order": 99,
           "type": "boolean",
           "markdownDescription": "Enables verbose debug output. Debug messages may contain more details if the invocation includes verbose information."
         },
-        "jody.debug.filter": {
-          "order": 99,
-          "type": "string",
-          "markdownDescription": "Regular expression to filter debug output. If empty, defaults to '.*', which prints all messages."
-        },
-        "jody.telemetry.level": {
-          "order": 99,
-          "type": "string",
-          "enum": ["all", "off"],
-          "enumDescriptions": ["Sends usage data and errors.", "Disables all extension telemetry."],
-          "markdownDescription": "Controls the telemetry about Jody usage and errors.",
-          "default": "all"
-        },
-        "jody.autocomplete.advanced.provider": {
+        "cody.autocomplete.advanced.provider": {
           "type": "string",
           "default": "fireworks",
           "enum": [
-            null,
-            "anthropic",
-            "fireworks",
-            "unstable-gemini",
-            "unstable-openai",
-            "experimental-ollama",
-            "experimental-openaicompatible"
+            "fireworks"
           ],
           "markdownDescription": "The provider used for code autocomplete. "
         },
         "jody.autocomplete.advanced.serverEndpoint": {
-          "order": 2,
-          "type": "string",
-          "markdownDescription": "这里填写服务管理部署的fastchat补全服务的服务地址。例如：https://192.168.0.22:443/dockerService/FastChat-pzhlei-bbeebbfb-dd57-48c1-a472-2cf8e119732c/",
-          "default": "https://192.168.0.22:443/dockerService/FastChat-pzhlei-bbeebbfb-dd57-48c1-a472-2cf8e119732c/"
-        },
-        "jody.autocomplete.advanced.accessToken": {
           "order": 3,
           "type": "string",
-          "markdownDescription": "The access token used for code autocomplete. This is only supported with a provider other than `anthropic`."
+          "markdownDescription": "补全服务的服务地址。例如：https://192.168.0.22/dockerService/vllm-pzhlei-e98070f1-07af-4ce2-8a48-befa19df1678/",
+          "default": "https://192.168.0.22/dockerService/vllm-pzhlei-e98070f1-07af-4ce2-8a48-befa19df1678/",
+          "pattern": "^(http|https):\\/\\/.*",
+          "errorMessage": "请输入有效的服务地址，地址必须以 'http://' 或 'https://' 开始。"
         },
-        "jody.autocomplete.advanced.prompt_template": {
+        "jody.autocomplete.advanced.accessToken": {
+          "order": 4,
           "type": "string",
-          "markdownDescription": "The prompt template used for code autocomplete."
+          "markdownDescription": "The access token used for code autocomplete."
+        },
+        "jody.autocomplete.advanced.promptTemplate": {
+          "type": "string",
+          "markdownDescription": "补全模型的提示词模板，例如 '<｜fim▁begin｜>infillPrefix<｜fim▁hole｜>suffix<｜fim▁end｜>'。"
         },
         "jody.autocomplete.advanced.model": {
-          "order": 2,
+          "order": 3,
           "type": "string",
-          "default": "deepseek-coder",
-          "markdownDescription": "Overwrite the  model used for code autocompletion inference. This is only supported with the `fireworks` provider"
+          "default": "codegeex4",
+          "markdownDescription": "补全服务的模型。例如：codegeex4",
+          "pattern": "^.+$",
+          "errorMessage": "补全模型不能为空，请输入一个有效的模型名称。"
         },
-        "jody.autocomplete.completeSuggestWidgetSelection": {
-          "type": "boolean",
-          "default": true,
-          "markdownDescription": "Autocomplete based on the currently selection in the suggest widget. Requires the VS Code user setting `editor.inlineSuggest.suppressSuggestions` set to true and will change it to true in user settings if it is not true."
-        },
-        "jody.autocomplete.formatOnAccept": {
+        "cody.autocomplete.formatOnAccept": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "Format completions on accept using [the default document formatter](https://code.visualstudio.com/docs/editor/codebasics#_formatting)."
         },
-        "jody.autocomplete.disableInsideComments": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "Prevent autocomplete requests while inside code comments."
-        },
-        "jody.experimental.foldingRanges": {
-          "type": "string",
-          "enum": ["lsp", "indentation-based"],
-          "enumDescriptions": [
-            "Use folding ranges that are enabled by default in VS Code, and are usually powered by LSP",
-            "Use custom implementation of folding ranges that is indentation based. This is the implementation that is used by other Jody clients like the JetBrains plugin"
-          ],
-          "markdownDescription": "Determines the algorithm Jody uses to detect folding ranges. Jody uses folding ranges for several features like the 'Document code' command",
-          "default": "all"
-        },
-        "jody.autocomplete.experimental.hotStreak": {
-          "type": "boolean",
-          "default": false,
-          "markdownDescription": "Preload follow-up completions"
-        },
-        "jody.autocomplete.experimental.graphContext": {
+        "cody.autocomplete.experimental.graphContext": {
           "type": "string",
           "default": null,
           "enum": [null, "bfg", "bfg-mixed", "tsc", "tsc-mixed"],
           "markdownDescription": "Use the code graph to retrieve context for autocomplete requests."
         },
-        "jody.autocomplete.experimental.fireworksOptions": {
-          "type": "object",
-          "markdownDescription": "Experimental options for the direct-Fireworks autocomplete provider.",
-          "properties": {
-            "url": {
-              "type": "string",
-              "description": "The URL of the Fireworks API.",
-              "default": "https://api.fireworks.ai/inference/v1/completions"
-            },
-            "token": {
-              "type": "string",
-              "description": "The access token of the Fireworks API."
-            },
-            "model": {
-              "type": "string",
-              "description": "The model ID can be acquired from `firectl list deployments`",
-              "default": "accounts/sourcegraph/models/starcoder2-7b"
-            },
-            "parameters": {
-              "type": "object",
-              "description": "Parameters for querying the the model.",
-              "properties": {
-                "temperature": "number",
-                "top_k": "number",
-                "top_p": "number",
-                "stop": {
-                  "type": "array",
-                  "default": [],
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "jody.autocomplete.experimental.ollamaOptions": {
-          "type": "object",
-          "markdownDescription": "Options for the [Ollama](https://ollama.ai/) experimental autocomplete provider.",
-          "default": {
-            "url": "http://localhost:11434",
-            "model": "deepseek-coder:6.7b-base-q4_K_M"
-          },
-          "properties": {
-            "url": {
-              "type": "string",
-              "description": "The URL of the Ollama API.",
-              "default": "http://localhost:11434"
-            },
-            "model": {
-              "type": "string",
-              "default": "deepseek-coder:6.7b-base-q4_K_M",
-              "examples": [
-                "codellama:7b-code",
-                "codellama:13b-code",
-                "deepseek-coder:6.7b-base-q4_K_M",
-                "starcoder2:7b",
-                "starcoder2:15b"
-              ]
-            },
-            "parameters": {
-              "type": "object",
-              "description": "Parameters for how Ollama will run the model. See Ollama [PARAMETER documentation](https://github.com/jmorganca/ollama/blob/main/docs/api.md#generate-request-with-options).",
-              "properties": {
-                "num_ctx": "number",
-                "temperature": "number",
-                "top_k": "number",
-                "top_p": "number"
-              }
-            }
-          }
-        },
-        "jody.autocomplete.experimental.smartThrottle": {
+        "cody.autocomplete.experimental.smartThrottle": {
           "type": "boolean",
           "default": false,
           "markdownDescription": "Changes the debounce time for autocomplete requests based on the amount of time since the last request."
-        },
-        "openctx.enable": {
-          "type": "boolean",
-          "markdownDescription": "Enable OpenCtx providers for jody.",
-          "default": false
-        },
-        "openctx.providers": {
-          "type": "object",
-          "markdownDescription": "OpenCtx providers configuration.",
-          "default": {}
-        },
-        "jody.internal.unstable": {
-          "order": 999,
-          "type": "boolean",
-          "markdownDescription": "[INTERNAL ONLY] Enable all unstable experimental features.",
-          "default": false
         }
       }
     },

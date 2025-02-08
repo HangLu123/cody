@@ -18,6 +18,7 @@ export async function* createSSEIterator(
         const messages: SSEMessage[] = []
 
         buffer += event.toString()
+        buffer = buffer.replaceAll('\r\n\r\n', SSE_TERMINATOR)
 
         let index: number
         // biome-ignore lint/suspicious/noAssignInExpressions: useful

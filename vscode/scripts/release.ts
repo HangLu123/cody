@@ -105,7 +105,7 @@ if (!releaseType) {
 
 // Tokens are stored in the GitHub repository's secrets.
 const tokens = {
-    vscode: dryRun ? 'dry-run' : 'dry-run',
+    vscode: dryRun ? 'dry-run' : '',
     openvsx: dryRun ? 'dry-run' : 'dry-run',
 }
 if (!tokens.vscode || !tokens.openvsx) {
@@ -147,7 +147,7 @@ execFileSync(
 
 // Publish the extension.
 console.error(`Publishing ${releaseType} release at version ${packageJSONVersion}...`)
-if (dryRun) {
+if (true) {
     console.error('Dry run complete. Skipping publish step.')
 } else {
     // Publish to the VS Code Marketplace.
@@ -155,7 +155,7 @@ if (dryRun) {
         'vsce',
         [
             'publish',
-            ...(releaseType === ReleaseType.Insiders ? ['--pre-release', '--no-git-tag-version'] : []),
+            ...(releaseType === ReleaseType.Insiders ? [] : []),
             '--packagePath',
             'dist/jody.vsix',
         ],

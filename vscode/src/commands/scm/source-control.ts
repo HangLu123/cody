@@ -20,6 +20,7 @@ import { PromptBuilder } from '../../prompt-builder'
 import type { API, GitExtension, InputBox, Repository } from '../../repository/builtinGitExtension'
 import { getContextFilesFromGitApi as getContext } from '../context/git-api'
 import { COMMIT_COMMAND_PROMPTS } from './prompts'
+import { getConfiguration } from '../../configuration'
 
 export class CodySourceControl implements vscode.Disposable {
     private disposables: vscode.Disposable[] = []
@@ -158,7 +159,12 @@ export class CodySourceControl implements vscode.Disposable {
 
             const stream = this.chatClient.chat(
                 prompt,
-                { model, maxTokensToSample: contextWindow.output },
+                {
+                    model:getConfiguration().chatModel,
+                    maxTokensToSample: getConfiguration().chatMaxTokens,
+                    temperature: getConfiguration().chatTemperature,
+                    language: getConfiguration().chatLanguage,
+                },
                 abortController?.signal
             )
 

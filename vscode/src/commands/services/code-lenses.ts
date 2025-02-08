@@ -56,7 +56,7 @@ export class CommandCodeLenses implements vscode.CodeLensProvider {
      * Update the configurations
      */
     private updateConfig(): void {
-        const config = vscode.workspace.getConfiguration('jody')
+        const config = vscode.workspace.getConfiguration('cody')
         this.isEnabled = config.get('commandCodeLenses') as boolean
         this.addTestEnabled = config.get('internal.unstable') as boolean
 

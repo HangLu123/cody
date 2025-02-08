@@ -88,7 +88,7 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
             process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
             // Text which has not been decoded as a server-sent event (SSE)
             let bufferText = ''
-            const accessToken = getConfiguration().autocompleteAdvancedAccessToken;
+            const accessToken = getConfiguration().chatAccessToken;
             const request = requestFn(
                 `${chatUrl}v1/chat/completions`,
                 {
@@ -264,7 +264,7 @@ export class SourcegraphNodeCompletionsClient extends SourcegraphCompletionsClie
                 let error = e
                 if (error.message.includes('ECONNREFUSED')) {
                     error = new Error(
-                        'Could not connect to Cody. Please ensure that you are connected to the Sourcegraph server.'
+                        '不能连接聊天服务，请检查网络连接或Chat:Sever Endpoint配置。'
                     )
                 }
                 log?.onError(error.message, e)

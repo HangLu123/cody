@@ -35,9 +35,11 @@ export class ChatClient {
             messages = messages.slice(0, -1)
         }
         messages = messages.map((ele: any, index: number) => {
+            const isLast = index === messages.length - 1;
+            const language = params.language == 'Chinese'? '请用中文回答' : ''
             return {
                 role: ele.speaker === 'human' ? 'user' : ele.speaker,
-                content: ele.text,
+                content: isLast ? `${ele.text}${language}` : ele.text,
             }
         })
 
@@ -45,8 +47,9 @@ export class ChatClient {
             {
                 model: params.model,
                 max_tokens: params.max_tokens || parseInt(params.maxTokensToSample) || 1000,
-                temperature: 0.2,
+                temperature: parseFloat(params.temperature) || 0.2,
                 stream: true,
+                stop: params.stopSequences ? params.stopSequences.map(str => str.trimStart()): [],
                 messages,
             },
             abortSignal

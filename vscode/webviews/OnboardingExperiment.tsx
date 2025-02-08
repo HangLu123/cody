@@ -9,7 +9,7 @@ import type { VSCodeWrapper } from './utils/VSCodeApi'
 
 import styles from './OnboardingExperiment.module.css'
 import logo from './logo-small.png'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface LoginProps {
     simplifiedLoginRedirect: (method: AuthMethod) => void
@@ -37,8 +37,22 @@ export const LoginSimplified: React.FunctionComponent<React.PropsWithoutRef<Logi
         e.preventDefault();
         vscodeAPI.postMessage({ command: 'setting' })
     }
+    useEffect(() => {
+        const targetView = document.querySelector('.loginPage');
+        if (targetView) {
+          const handleContextMenu = (event) => {
+            event.preventDefault();
+          };
+          targetView.addEventListener('contextmenu', handleContextMenu);
+
+          // 清理函数
+          return () => {
+            targetView.removeEventListener('contextmenu', handleContextMenu);
+          };
+        }
+      }, []);
     return (
-        <div className={styles.container}>
+        <div className={`${styles.container} loginPage`}>
             <div className={styles.sectionsContainer}>
                 <form onSubmit={signInClick} className={styles.section}>
                     <p className={styles.desc}>

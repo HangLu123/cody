@@ -297,11 +297,10 @@ export class SimpleChatPanelProvider
                     this.isRequestInProgress = true;
                     const jhServer = getConfiguration().jhServer
                     if (!jhServer) {
-                        void vscode.window.showErrorMessage('门户地址配置错误。请点击"插件配置"。修改"Jody:JH Server", 重载后尝试登录。');
+                        void vscode.window.showErrorMessage('门户地址配置错误。请点击"插件配置"。修改"Jody:JH Server"后尝试登录。');
                         vscode.commands.executeCommand('cody.settings.extension');
                         return;
                     }
-                    //如果账号密码为空，提示
                     if (!message.userName || !message.password) {
                         void vscode.window.showErrorMessage('登录账号或密码不能为空。');
                         return;
@@ -1409,7 +1408,9 @@ export class SimpleChatPanelProvider
                 prompt,
                 {
                     model: getConfiguration().chatModel,
-                    maxTokensToSample: vscode.workspace.getConfiguration().get('jody.chat.max_tokens'),
+                    maxTokensToSample: getConfiguration().chatMaxTokens,
+                    temperature: getConfiguration().chatTemperature,
+                    language: getConfiguration().chatLanguage,
                 },
                 abortSignal
             )

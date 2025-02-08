@@ -1,8 +1,8 @@
 ## Code Autocomplete
 
-<img src="https://storage.googleapis.com/sourcegraph-assets/blog/vs-code-onboarding-walkthrough-dec-2023-cody-autocomplete-tsx.gif">
+<img src="../resources/autocomplete.gif">
 
-Start writing code and Cody will complete the line (or the entire function) for you. Hit tab to accept the suggestion.
+Start writing code and Jody will complete the line (or the entire function) for you. Hit tab to accept the suggestion.
 
 **✨ Pro-tips for using Cody autocomplete**
 <br>• Autocomplete uses the surrounding code and context to inform the suggestions, so if you need to guide it you can add a comment above the line you're editing.

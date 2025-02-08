@@ -524,7 +524,7 @@ const register = async (
             await vscode.commands.executeCommand('workbench.action.openWalkthrough')
             return vscode.commands.executeCommand(
                 'workbench.action.openWalkthrough',
-                'sourcegraph.cody-ai#welcome',
+                'jhinno.jody-ai#welcome',
                 false
             )
         }),

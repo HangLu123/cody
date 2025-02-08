@@ -124,7 +124,9 @@ export class EditProvider {
                 {
                     model: getConfiguration().chatModel,
                     stopSequences,
-                    maxTokensToSample: vscode.workspace.getConfiguration().get('jody.chat.max_tokens'),
+                    maxTokensToSample: getConfiguration().chatMaxTokens,
+                    temperature: getConfiguration().chatTemperature,
+                    language: getConfiguration().chatLanguage,
                 },
                 this.abortController.signal
             )

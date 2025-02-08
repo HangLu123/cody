@@ -186,7 +186,7 @@ export function createStatusBar(): CodyStatusBar {
                 'Code Autocomplete',
                 undefined,
                 'Enable Jody-powered code autocompletions',
-                'jody.autocomplete.enabled',
+                'cody.autocomplete.enabled',
                 c => c.autocomplete,
                 false,
                 [
@@ -195,7 +195,7 @@ export function createStatusBar(): CodyStatusBar {
                         tooltip: 'Autocomplete Settings',
                         onClick: () =>
                             vscode.commands.executeCommand('workbench.action.openSettings', {
-                                query: '@ext:jhinno.jody autocomplete',
+                                query: '@ext:jhinno.jody-ai autocomplete',
                             }),
                     } as vscode.QuickInputButton,
                 ]
@@ -204,21 +204,21 @@ export function createStatusBar(): CodyStatusBar {
                 'Code Actions',
                 undefined,
                 'Enable Jody fix and explain options in the Quick Fix menu',
-                'jody.codeActions.enabled',
+                'cody.codeActions.enabled',
                 c => c.codeActions
             ),
             await createFeatureToggle(
                 'Code Lenses',
                 undefined,
                 'Enable Code Lenses in documents for quick access to Jody commands',
-                'jody.commandCodeLenses',
+                'cody.commandCodeLenses',
                 c => c.commandCodeLenses
             ),
             await createFeatureToggle(
                 'Command Hints',
                 undefined,
                 'Enable hints for Jody commands such as "Opt+K to Edit" or "Opt+D to Document"',
-                'jody.commandHints.enabled',
+                'cody.commandHints.enabled',
                 async () => {
                     const enablement = await getGhostHintEnablement()
                     return enablement.Document || enablement.EditOrChat || enablement.Generate
@@ -377,6 +377,14 @@ export function createStatusBar(): CodyStatusBar {
         },
         hasError(errorName: StatusBarErrorName): boolean {
             return errors.some(e => e.error.errorType === errorName)
+        },
+        deleteError(errorName: StatusBarErrorName) {
+            for (let i = errors.length - 1; i >= 0; i--) {
+                if (errors[i].error.errorType === errorName) {
+                  errors.splice(i, 1);
+                }
+              }
+            rerender()
         },
         syncAuthStatus(newStatus: AuthStatus) {
             authStatus = newStatus

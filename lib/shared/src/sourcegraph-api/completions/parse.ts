@@ -77,6 +77,12 @@ interface EventsParseResult {
 
 export function parseEvents(eventsBuffer: string): EventsParseResult | Error {
     let eventStartIndex = 0
+    eventsBuffer = eventsBuffer.replaceAll('\r\n\r\n', EVENTS_SEPARATOR)
+    const prefixIndex = eventsBuffer.indexOf(DATA_LINE_PREFIX);
+    if (prefixIndex !== -1) {
+        // Remove everything up to and including the prefix
+        eventsBuffer = eventsBuffer.substring(prefixIndex);
+    }
     let eventEndIndex = eventsBuffer.indexOf(EVENTS_SEPARATOR)
 
     const events: Event[] = []

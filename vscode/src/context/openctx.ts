@@ -67,14 +67,6 @@ function getStandardOpenContextProviders(config: ConfigurationWithAccessToken, i
         }
     }
 
-    if (config.experimentalNoodle) {
-        providers.push({
-            settings: true,
-            provider: LinearIssuesProvider,
-            providerUri: LinearIssuesProvider.providerUri,
-        })
-    }
-
     return providers
 }
 

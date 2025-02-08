@@ -34,7 +34,7 @@ export function getConfiguration(
     const isTesting = process.env.CODY_TESTING === 'true'
 
     function getHiddenSetting<T>(configKey: string, defaultValue?: T): T {
-        return config.get<T>(`jody.${configKey}` as any, defaultValue)
+        return config.get<T>(`cody.${configKey}` as any, defaultValue)
     }
 
     let debugRegex: RegExp | null = null
@@ -104,10 +104,14 @@ export function getConfiguration(
         customHeaders: config.get<object>(CONFIG_KEY.customHeaders, {}) as Record<string, string>,
         useContext: config.get<ConfigurationUseContext>(CONFIG_KEY.useContext) || 'embeddings',
         jhServer: config.get(CONFIG_KEY.jhServer) || '',
+        chatMaxTokens: config.get(CONFIG_KEY.chatMaxTokens) || '',
+        chatTemperature: config.get(CONFIG_KEY.chatTemperature) || '',
         chatModel: config.get(CONFIG_KEY.chatModel) || '',
         chatServerEndpoint: config.get(CONFIG_KEY.chatServerEndpoint) || '',
         autocompleteAdvancedAccessToken: config.get(CONFIG_KEY.autocompleteAdvancedAccessToken) || '',
+        chatAccessToken: config.get(CONFIG_KEY.chatAccessToken) || '',
         autocompleteAdvancedServerEndpoint: config.get(CONFIG_KEY.autocompleteAdvancedServerEndpoint) || '',
+        chatLanguage: config.get(CONFIG_KEY.chatLanguage) || '',
         debugVerbose: config.get<boolean>(CONFIG_KEY.debugVerbose, false),
         debugFilter: debugRegex,
         telemetryLevel: config.get<'all' | 'off'>(CONFIG_KEY.telemetryLevel, 'all'),

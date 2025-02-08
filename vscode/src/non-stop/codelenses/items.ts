@@ -10,6 +10,7 @@ import { CodyTaskState } from '../utils'
 export function getLensesForTask(task: FixupTask): vscode.CodeLens[] {
     const codeLensRange = new vscode.Range(task.selectionRange.start, task.selectionRange.start)
     const isTest = task.intent === 'test'
+    const isDoc = task.intent === 'doc'
     const isEdit = task.mode === 'edit'
     switch (task.state) {
         case CodyTaskState.Pending:
@@ -33,7 +34,7 @@ export function getLensesForTask(task: FixupTask): vscode.CodeLens[] {
             const accept = getAcceptLens(codeLensRange, task.id)
             const retry = getRetryLens(codeLensRange, task.id)
             const undo = getUndoLens(codeLensRange, task.id)
-            if (isTest) {
+            if (isTest || isDoc) {
                 return [accept, undo]
             }
             if (isEdit) {

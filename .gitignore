@@ -1,6 +1,7 @@
 node_modules/
 .stylelintcache
 dist/
+agent/
 out/
 *.tsbuildinfo
 .DS_Store

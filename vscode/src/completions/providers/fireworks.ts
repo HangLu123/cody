@@ -151,6 +151,10 @@ function getMaxContextTokens(model: FireworksModel): number {
             // Llama 2 on Fireworks supports up to 4k tokens. We're constraining it here to better
             // compare the results
             return 2048
+        case 'codegeex4':
+            // codegeex4 on Fireworks supports up to 16k tokens. We're constraining it here to better
+            // compare the results
+            return 4096
         case FIREWORKS_FIM_FINE_TUNED_MODEL_HYBRID:
         case FIREWORKS_FIM_LANG_SPECIFIC_MODEL_MIXTRAL:
         case FIREWORKS_DEEPSEEK_7B_LANG_STACK_FINETUNED:
@@ -240,6 +244,9 @@ class FireworksProvider extends Provider {
         if (isCodeQwenFamily(this.model)) {
             return new fimPromptUtils.CodeQwenModelPromptExtractor()
         }
+        if (isCodeGeexFamily(this.model)) {
+            return new fimPromptUtils.CodeGeexModelPromptExtractor()
+        }
         if (isDeepSeekModelFamily(this.model)) {
             return new fimPromptUtils.DeepSeekPromptExtractor()
         }
@@ -292,7 +299,7 @@ class FireworksProvider extends Provider {
         if (isLlamaCode(this.model)) {
             intro.push(ps`Path: ${PromptString.fromDisplayPath(this.options.document.uri)}`)
         }
-
+        let referencefile = ''
         for (let snippetsToInclude = 0; snippetsToInclude < snippets.length + 1; snippetsToInclude++) {
             if (snippetsToInclude > 0) {
                 const snippet = snippets[snippetsToInclude - 1]
@@ -310,6 +317,7 @@ class FireworksProvider extends Provider {
                         })
                     )
                 }
+                referencefile = `###PATH: ${snippet.uri.fsPath.split(/[/\\]+/).pop()}\n${snippet.content}\n${referencefile}`
             }
 
             const introString = this.getIntroString(intro, languageConfig)
@@ -319,10 +327,19 @@ class FireworksProvider extends Provider {
             const suffixAfterFirstNewline = getSuffixAfterFirstNewline(suffix)
 
             const modelHelpers = getModelHelpers(this.model)
+            const languageId = this.options.document.languageId;
             const nextPrompt = modelHelpers.getPrompt({
-                context: introString,
+                repoName: this.options.gitContext
+                    ? PromptString.fromAutocompleteGitContext(
+                          this.options.gitContext,
+                          this.options.document.uri
+                      ).repoName
+                    : undefined,
+                filename: PromptString.fromDisplayPath(this.options.document.uri),
+                intro: introString,
                 prefix,
                 suffix: suffixAfterFirstNewline,
+                user: `${referencefile}###PATH: ${PromptString.fromDisplayPath(this.options.document.uri)}\n###LANGUAGE: ${languageId.charAt(0).toUpperCase() + languageId.slice(1)}\n###MODE: BLOCK`
             })
 
             if (nextPrompt.length >= this.promptChars) {
@@ -533,7 +550,6 @@ class FireworksProvider extends Provider {
                             ...(self.fireworksConfig?.parameters?.stop || []),
                         ],
                     stream: true,
-                    languageId: self.options.document.languageId,
                 }
 
                 const headers = new Headers(self.getCustomHeaders())
@@ -544,7 +560,7 @@ class FireworksProvider extends Provider {
                     'Content-Type',
                     `application/json${self.fireworksConfig ? '' : '; charset=utf-8'}`
                 )
-                headers.set('Authorization', `Bearer ${self.fastPathAccessToken}`)
+                headers.set('Authorization', `Bearer ${getConfiguration().autocompleteAdvancedAccessToken}`)
                 headers.set('X-Sourcegraph-Feature', 'code_completions')
                 process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0'
                 addTraceparent(headers)
@@ -760,7 +776,11 @@ function isDeepSeekModelFamily(model: string): boolean {
 }
 
 function isCodeQwenFamily(model: string): boolean {
-    return [CODE_QWEN_7B].includes(model)
+    return model.includes('codeqwen')
+}
+
+function isCodeGeexFamily(model: string): boolean {
+    return model.includes('codegeex')
 }
 
 interface FireworksSSEData {

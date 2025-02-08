@@ -4,7 +4,7 @@ import type { OllamaGenerateParameters } from '@sourcegraph/cody-shared'
 
 interface OllamaPromptContext {
     snippets: { uri: vscodeTypes.Uri; content: string }[]
-    context: string
+    intro: string
     currentFileNameComment: string
     isInfill: boolean
 
@@ -24,14 +24,14 @@ class DefaultOllamaModel implements OllamaModel {
     getPrompt(ollamaPrompt: OllamaPromptContext): string {
         const promptTemplate: any = vscode.workspace
             .getConfiguration()
-            .get('cody.autocomplete.advanced.promptTemplate')
-        const { context, currentFileNameComment, prefix, suffix } = ollamaPrompt
+            .get('jody.autocomplete.advanced.promptTemplate')
+        const { intro, currentFileNameComment, prefix, suffix } = ollamaPrompt
 
-        const infillPrefix = context + prefix
+        const infillPrefix = intro + prefix
 
         return promptTemplate
-            ? promptTemplate.replace('${infillPrefix}', infillPrefix).replace('${suffix}', suffix)
-            : context + currentFileNameComment + prefix
+            ? promptTemplate.replace('infillPrefix', infillPrefix).replace('suffix', suffix)
+            : `${intro}${currentFileNameComment||''}${prefix}`
     }
 
     getRequestOptions(isMultiline: boolean): OllamaGenerateParameters {
@@ -52,9 +52,9 @@ class DefaultOllamaModel implements OllamaModel {
 
 class DeepseekCoder extends DefaultOllamaModel {
     getPrompt(ollamaPrompt: OllamaPromptContext): string {
-        const { context, prefix, suffix } = ollamaPrompt
+        const { intro, prefix, suffix } = ollamaPrompt
 
-        const infillPrefix = context + prefix
+        const infillPrefix = intro + prefix
 
         return `<｜fim▁begin｜>${infillPrefix}<｜fim▁hole｜>${suffix}<｜fim▁end｜>`
     }
@@ -76,12 +76,37 @@ class DeepseekCoder extends DefaultOllamaModel {
     }
 }
 
+class CodeGeex extends DefaultOllamaModel {
+    getPrompt(ollamaPrompt: OllamaPromptContext): string {
+        const { intro, currentFileNameComment, prefix, suffix, isInfill, user } = ollamaPrompt
+
+        const infillPrefix = prefix
+
+        return `<|user|>\n${user}\n<|code_suffix|>${suffix}<|code_prefix|>${infillPrefix}<|code_middle|><|assistant|>\n`
+    }
+
+    getRequestOptions(isMultiline: boolean): OllamaGenerateParameters {
+        const stop = ['<｜fim▁begin｜>', '<｜fim▁hole｜>', '<｜fim▁end｜>','<｜user｜>', '<｜code_suffix｜>', '<｜code_prefix｜>', '<｜code_middle｜>', '<｜assistant｜>']
+
+        const params = {
+            stop: ['\n', ...stop],
+            temperature: 0.1,
+        }
+
+        if (isMultiline) {
+            params.stop = ['\n\n', ...stop]
+        }
+
+        return params
+    }
+}
+
 class CodeLlama extends DefaultOllamaModel {
     getPrompt(ollamaPrompt: OllamaPromptContext): string {
-        const { context, currentFileNameComment, prefix, suffix, isInfill } = ollamaPrompt
+        const { intro, currentFileNameComment, prefix, suffix, isInfill } = ollamaPrompt
 
         if (isInfill) {
-            const infillPrefix = context + currentFileNameComment + prefix
+            const infillPrefix = intro + currentFileNameComment + prefix
 
             /**
              * The infill prompt for Code Llama.
@@ -96,17 +121,17 @@ class CodeLlama extends DefaultOllamaModel {
             return `<PRE> ${infillPrefix} <SUF>${suffix} <MID>`
         }
 
-        return context + currentFileNameComment + prefix
+        return intro + currentFileNameComment + prefix
     }
 }
 
 class StarCoder2 extends DefaultOllamaModel {
     getPrompt(ollamaPrompt: OllamaPromptContext): string {
-        const { context, prefix, suffix } = ollamaPrompt
+        const { intro, prefix, suffix } = ollamaPrompt
 
         // `currentFileNameComment` is not included because it causes StarCoder2 to output
         // invalid suggestions.
-        const infillPrefix = context + prefix
+        const infillPrefix = intro + prefix
 
         return `<fim_prefix>${infillPrefix}<fim_suffix>${suffix}<fim_middle>`
     }
@@ -135,6 +160,10 @@ export function getModelHelpers(model: string) {
 
     if (model.includes('deepseek-coder')) {
         return new DeepseekCoder()
+    }
+
+    if (model.includes('codegeex')) {
+        return new CodeGeex()
     }
 
     if (model.includes('starcoder2') || model.includes('codegemma')) {

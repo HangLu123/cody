@@ -144,7 +144,7 @@ export const ContextCell: React.FunctionComponent<{
                                         <TooltipContent side="bottom">
                                             <span>
                                                 Information and general reasoning capabilities trained
-                                                into the model {model && <code>{model}</code>}
+                                                into the model
                                             </span>
                                         </TooltipContent>
                                     </Tooltip>
